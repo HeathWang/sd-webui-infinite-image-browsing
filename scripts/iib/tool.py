@@ -5,10 +5,12 @@ import re
 import tempfile
 import imghdr
 import subprocess
-from typing import Dict
+from typing import Dict, List
 import sys
 import piexif
 import piexif.helper
+import json
+import zipfile
 
 sd_img_dirs = [
     "outdir_txt2img_samples",
@@ -23,31 +25,66 @@ sd_img_dirs = [
 
 
 is_dev = os.getenv("APP_ENV") == "dev"
-cwd = os.path.normpath(os.path.join(__file__, "../../../"))
+is_nuitka = "__compiled__" in globals()
+cwd = os.getcwd() if is_nuitka else os.path.normpath(os.path.join(__file__, "../../../"))
 is_win = platform.system().lower().find("windows") != -1
 
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(cwd, ".env"))
-except BaseException as e:
-    print(e)
 
+    load_dotenv(os.path.join(cwd, ".env"))
+except Exception as e:
+    print(e)
 
 
 def get_sd_webui_conf(**kwargs):
     try:
         from modules.shared import opts
+
         return opts.data
     except:
         pass
     try:
-        with open(kwargs.get("sd_webui_config"), "r") as f:
-            import json
-            return json.loads(f.read())
+        sd_conf_path = kwargs.get("sd_webui_config")
+        with open(sd_conf_path, "r") as f:
+            obj = json.loads(f.read())
+            if kwargs.get("sd_webui_path_relative_to_config"):
+                for dir in sd_img_dirs:
+                    if obj[dir] and not os.path.isabs(obj[dir]):
+                        obj[dir] = os.path.normpath(
+                            os.path.join(sd_conf_path, "../", obj[dir])
+                        )
+            return obj
     except:
         pass
     return {}
+
+def normalize_paths(paths: List[str], base = cwd):
+    """
+    Normalize a list of paths, ensuring that each path is an absolute path with no redundant components.
+
+    Args:
+        paths (List[str]): A list of paths to be normalized.
+
+    Returns:
+        List[str]: A list of normalized paths.
+    """
+    res: List[str] = []
+    for path in paths:
+        # Skip empty or blank paths
+        if not path or len(path.strip()) == 0:
+            continue
+        # If the path is already an absolute path, use it as is
+        if os.path.isabs(path):
+            abs_path = path
+        # Otherwise, make the path absolute by joining it with the current working directory
+        else:
+            abs_path = os.path.join(base, path)
+        # If the absolute path exists, add it to the result after normalizing it
+        if os.path.exists(abs_path):
+            res.append(os.path.normpath(abs_path))
+    return res
 
 
 def get_valid_img_dirs(
@@ -121,7 +158,6 @@ def convert_to_bytes(file_size_str):
         raise ValueError(f"Invalid file size string '{file_size_str}'")
 
 
-
 def is_valid_image_path(path):
     """
     判断给定的路径是否是图像文件
@@ -137,6 +173,26 @@ def is_valid_image_path(path):
 
 
 
+def create_zip_file(file_paths: List[str], zip_file_name: str):
+    """
+    将文件打包成一个压缩包
+
+    Args:
+        file_paths: 文件路径的列表
+        zip_file_name: 压缩包的文件名
+
+    Returns:
+        无返回值
+    """
+    with zipfile.ZipFile(zip_file_name, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for file_path in file_paths:
+            if os.path.isfile(file_path):
+                zip_file.write(file_path, os.path.basename(file_path))
+            elif os.path.isdir(file_path):
+                for root, _, files in os.walk(file_path):
+                    for file in files:
+                        full_path = os.path.join(root, file)
+                        zip_file.write(full_path, os.path.relpath(full_path, file_path))
 
 def get_temp_path():
     """获取跨平台的临时文件目录路径"""
@@ -168,6 +224,7 @@ def get_temp_path():
 
 temp_path = get_temp_path()
 
+
 def get_enable_access_control():
     ctrl = os.getenv("IIB_ACCESS_CONTROL")
     if ctrl == "enable":
@@ -176,17 +233,23 @@ def get_enable_access_control():
         return False
     try:
         from modules.shared import cmd_opts
-        return cmd_opts.share or cmd_opts.ngrok or cmd_opts.listen or cmd_opts.server_name
+
+        return (
+            cmd_opts.share or cmd_opts.ngrok or cmd_opts.listen or cmd_opts.server_name
+        )
     except:
         pass
     return False
 
+
 enable_access_control = get_enable_access_control()
+
 
 def get_locale():
     import locale
+
     env_lang = os.getenv("IIB_SERVER_LANG")
-    if env_lang in ['zh', 'en']:
+    if env_lang in ["zh", "en"]:
         return env_lang
     lang, _ = locale.getdefaultlocale()
     return "zh" if lang and lang.startswith("zh") else "en"
@@ -198,23 +261,52 @@ locale = get_locale()
 def get_formatted_date(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
+
 def get_modified_date(folder_path: str):
     return get_formatted_date(os.path.getmtime(folder_path))
+
 
 def get_created_date(folder_path: str):
     return get_formatted_date(os.path.getctime(folder_path))
 
-def unique_by(seq, key_func):
+
+def unique_by(seq, key_func=lambda x: x):
     seen = set()
     return [x for x in seq if not (key := key_func(x)) in seen and not seen.add(key)]
 
 
-def read_info_from_image(image) -> str:
+def find(lst, comparator):
+    return next((item for item in lst if comparator(item)), None)
+
+
+def findIndex(lst, comparator):
+    return next((i for i, item in enumerate(lst) if comparator(item)), -1)
+
+
+def get_img_geninfo_txt_path(path: str):
+    txt_path = re.sub(r"\..+$", ".txt", path)
+    if os.path.exists(txt_path):
+        return txt_path
+
+
+def read_info_from_image(image, path="") -> str:
+    """
+    Reads metadata from an image file.
+
+    Args:
+        image (PIL.Image.Image): The image object to read metadata from.
+        path (str): Optional. The path to the image file. Used to look for a .txt file with additional metadata.
+
+    Returns:
+        str: The metadata as a string.
+    """
     items = image.info or {}
     geninfo = items.pop("parameters", None)
+
     if "exif" in items:
         exif = piexif.load(items["exif"])
         exif_comment = (exif or {}).get("Exif", {}).get(piexif.ExifIFD.UserComment, b"")
+
         try:
             exif_comment = piexif.helper.UserComment.load(exif_comment)
         except ValueError:
@@ -223,15 +315,26 @@ def read_info_from_image(image) -> str:
         if exif_comment:
             items["exif comment"] = exif_comment
             geninfo = exif_comment
+
+    if not geninfo and path:
+        try:
+            txt_path = get_img_geninfo_txt_path(path)
+            if txt_path:
+                with open(txt_path) as f:
+                    geninfo = f.read()
+        except Exception as e:
+            pass
+
     return geninfo
 
 
 re_param_code = r'\s*([\w ]+):\s*("(?:\\"[^,]|\\"|\\|[^\"])+"|[^,]*)(?:,|$)'
 re_param = re.compile(re_param_code)
 re_imagesize = re.compile(r"^(\d+)x(\d+)$")
-re_lora_prompt = re.compile("<lora:([\w_\s.]+):([\d.]+)>")
-re_parens = re.compile(r"[\\/\[\](){}]+")
+re_lora_prompt = re.compile("<lora:([\w_\s.]+):([\d.]+)>", re.IGNORECASE)
 re_lora_extract = re.compile(r"([\w_\s.]+)(?:\d+)?")
+re_lyco_prompt = re.compile("<lyco:([\w_\s.]+):([\d.]+)>", re.IGNORECASE)
+re_parens = re.compile(r"[\\/\[\](){}]+")
 
 
 def lora_extract(lora: str):
@@ -244,28 +347,34 @@ def lora_extract(lora: str):
 
 def parse_prompt(x: str):
     x = re.sub(
-        re_parens, "", x.lower().replace("，", ",").replace("-", " ").replace("_", " ")
+        re_parens, "", x.replace("，", ",").replace("-", " ").replace("_", " ")
     )
     tag_list = [x.strip() for x in x.split(",")]
     res = []
     lora_list = []
+    lyco_list = []
     for tag in tag_list:
         if len(tag) == 0:
             continue
         idx_colon = tag.find(":")
         if idx_colon != -1:
-            lora_res = re.search(re_lora_prompt, tag)
-            if lora_res:
+            if re.search(re_lora_prompt, tag):
+                lora_res = re.search(re_lora_prompt, tag)
                 lora_list.append(
                     {"name": lora_res.group(1), "value": float(lora_res.group(2))}
+                )
+            elif re.search(re_lyco_prompt, tag):
+                lyco_res = re.search(re_lyco_prompt, tag)
+                lyco_list.append(
+                    {"name": lyco_res.group(1), "value": float(lyco_res.group(2))}
                 )
             else:
                 tag = tag[0:idx_colon]
                 if len(tag):
-                    res.append(tag)
+                    res.append(tag.lower())
         else:
-            res.append(tag)
-    return res, lora_list
+            res.append(tag.lower())
+    return {"pos_prompt": res, "lora": lora_list, "lyco": lyco_list}
 
 
 def parse_generation_parameters(x: str):
@@ -274,7 +383,7 @@ def parse_generation_parameters(x: str):
     negative_prompt = ""
     done_with_prompt = False
     if not x:
-        return {}, [], [], []
+        return {"meta": {}, "pos_prompt": [], "lora": [], "lyco": []}
     *lines, lastline = x.strip().split("\n")
     if len(re_param.findall(lastline)) < 3:
         lines.append(lastline)
@@ -303,20 +412,20 @@ def parse_generation_parameters(x: str):
             res[k + "-2"] = m.group(2)
         else:
             res[k] = v
-    pos_prompt, lora = parse_prompt(prompt)
+    prompt_parse_res = parse_prompt(prompt)
+    lora = prompt_parse_res["lora"]
     for k in res:
         k_s = str(k)
         if k_s.startswith("AddNet Module") and str(res[k]).lower() == "lora":
             model = res[k_s.replace("Module", "Model")]
             value = res.get(k_s.replace("Module", "Weight A"), "1")
             lora.append({"name": lora_extract(model), "value": float(value)})
-
-    return (
-        res,
-        unique_by(lora, lambda x: x["name"]),
-        unique_by(pos_prompt, lambda x: x),
-        [],
-    )
+    return {
+        "meta": res,
+        "pos_prompt": unique_by(prompt_parse_res["pos_prompt"]),
+        "lora": unique_by(lora, lambda x: x["name"].lower()),
+        "lyco": unique_by(prompt_parse_res["lyco"], lambda x: x["name"].lower()),
+    }
 
 
 tags_translate: Dict[str, str] = {}
@@ -336,16 +445,18 @@ def open_folder(folder_path, file_path=None):
     folder = os.path.realpath(folder_path)
     if file_path:
         file = os.path.join(folder, file_path)
-        if os.name == 'nt':
-            subprocess.run(['explorer', '/select,', file])
-        elif sys.platform == 'darwin':
-            subprocess.run(['open', '-R', file])
-        elif os.name == 'posix':
-            subprocess.run(['xdg-open', file])
+        if os.name == "nt":
+            subprocess.run(["explorer", "/select,", file])
+        elif sys.platform == "darwin":
+            subprocess.run(["open", "-R", file])
+        elif os.name == "posix":
+            subprocess.run(["xdg-open", file])
     else:
-        if os.name == 'nt':
-            subprocess.run(['explorer', folder])
-        elif sys.platform == 'darwin':
-            subprocess.run(['open', folder])
-        elif os.name == 'posix':
-            subprocess.run(['xdg-open', folder])
+        if os.name == "nt":
+            subprocess.run(["explorer", folder])
+        elif sys.platform == "darwin":
+            subprocess.run(["open", folder])
+        elif os.name == "posix":
+            subprocess.run(["xdg-open", folder])
+
+

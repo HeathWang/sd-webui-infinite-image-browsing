@@ -1,4 +1,4 @@
-BaiduPCS-Go*
+
 *.log
 __pycache__
 iib.db
@@ -7,3 +7,10 @@ launch.sh
 conf.json
 iib.db-journal
 standalone.cmd
+.vscode
+build/**/*
+dist/**/*
+*.spec
+out/**/*
+venv/**/*
+zip_temp/*.zip

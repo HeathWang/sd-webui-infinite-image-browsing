@@ -2,6 +2,7 @@ import { t } from '@/i18n'
 import { message } from 'ant-design-vue'
 import { reactive } from 'vue'
 import { FetchQueue, idKey, typedEventEmitter, type UniqueId } from 'vue3-ts-util'
+export * from './file'
 
 export const parentWindow = () => {
   return parent.window as any as Window & {
@@ -27,7 +28,7 @@ export function gradioApp(): Window & Document {
 
 export const getTabIdxInSDWebui = () => {
   const tabList = gradioApp().querySelectorAll('#tabs > .tabitem[id^=tab_]')
-  return Array.from(tabList).findIndex(v => v.id.includes('infinite-image-browsing'))
+  return Array.from(tabList).findIndex((v) => v.id.includes('infinite-image-browsing'))
 }
 
 export const switch2IBB = () => {
@@ -74,16 +75,6 @@ export const pick = <T extends Dict, keys extends Array<keyof T>>(v: T, ...keys:
  * ReturnTypeAsync\<typeof fn\>
  */
 export type ReturnTypeAsync<T extends (...arg: any) => Promise<any>> = Awaited<ReturnType<T>>
-
-export function isImageFile(filename: string): boolean {
-  if (typeof filename !== 'string') {
-    return false
-  }
-  const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
-  const extension = filename.split('.').pop()?.toLowerCase()
-  return extension !== undefined && imageExtensions.includes(`.${extension}`)
-}
-
 export const createReactiveQueue = () => reactive(new FetchQueue(-1, 0, -1, 'throw'))
 
 export const copy2clipboardI18n = async (text: string, msg?: string) => {
@@ -106,8 +97,9 @@ export const copy2clipboardI18n = async (text: string, msg?: string) => {
 
 export const { useEventListen: useGlobalEventListen, eventEmitter: globalEvents } =
   typedEventEmitter<{
-    'return-to-iib'(): void
+    returnToIIB(): void
     updateGlobalSetting(): void
+    searchIndexExpired(): void
   }>()
 
 type AsyncFunction<T> = (...args: any[]) => Promise<T>
@@ -159,12 +151,11 @@ export function removeQueryParams(keys: string[]): string {
   return newUrl
 }
 
-
 export const createImage = (src: string) => {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve(img)
-    img.onerror = err => reject(err)
+    img.onerror = (err) => reject(err)
     img.src = src
   })
 }

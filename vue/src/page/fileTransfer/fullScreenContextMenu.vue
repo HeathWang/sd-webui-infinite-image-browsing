@@ -19,19 +19,21 @@ import {
   EllipsisOutlined
 } from '@/icon'
 import { t } from '@/i18n'
-import { getImageSelectedCustomTag, type Tag } from '@/api/db'
+import { type Tag } from '@/api/db'
 import { createReactiveQueue } from '@/util'
-import { toRawFileUrl } from './hook'
-import ContextMenu from './ContextMenu.vue'
+import { toRawFileUrl } from '@/util/file'
+import ContextMenu from '@/components/ContextMenu.vue'
 import { useWatchDocument } from 'vue3-ts-util'
+import { useTagStore } from '@/store/useTagStore'
 
 const global = useGlobalStore()
+const tagStore = useTagStore()
 const el = ref<HTMLElement>()
 const props = defineProps<{
   file: FileNodeInfo
   idx: number
 }>()
-const selectedTag = ref([] as Tag[])
+const selectedTag = computed(() => tagStore.tagMap.get(props.file.fullpath) ?? [])
 const tags = computed(() => {
   return (global.conf?.all_custom_tags ?? []).reduce((p, c) => {
     return [...p, { ...c, selected: !!selectedTag.value.find((v) => v.id === c.id) }]
@@ -57,14 +59,6 @@ watch(
   },
   { immediate: true }
 )
-const onMouseHoverContext = (show: boolean) => {
-  if (!show) {
-    return
-  }
-  q.pushAction(() => getImageSelectedCustomTag(props.file.fullpath)).res.then((res) => {
-    selectedTag.value = res
-  })
-}
 
 const resizeHandle = ref<HTMLElement>()
 const dragHandle = ref<HTMLElement>()
@@ -100,7 +94,7 @@ function getParNode (p: any) {
 useWatchDocument('load', e => {
   const el = e.target as HTMLImageElement
   if (el.className === 'ant-image-preview-img') {
-    currImgResolution.value = `${el.width} x ${el.height}`
+    currImgResolution.value = `${el.naturalWidth} x ${el.naturalHeight}`
   }
 }, { capture: true })
 
@@ -111,6 +105,7 @@ const baseInfoTags = computed(() => {
   }
   return tags
 })
+
 </script>
 
 <template>
@@ -124,7 +119,7 @@ const baseInfoTags = computed(() => {
           <FullscreenExitOutlined v-if="state.expanded" />
           <FullscreenOutlined v-else />
         </div>
-        <a-dropdown @visible-change="onMouseHoverContext" :get-popup-container="getParNode">
+        <a-dropdown :get-popup-container="getParNode">
           <div class="icon" style="cursor: pointer" v-if="!state.expanded">
             <ellipsis-outlined />
           </div>
@@ -136,7 +131,7 @@ const baseInfoTags = computed(() => {
         </a-dropdown>
         <div flex-placeholder v-if="state.expanded" />
         <div v-if="state.expanded" class="action-bar">
-          <a-dropdown :trigger="['hover']" :get-popup-container="getParNode" @visible-change="onMouseHoverContext">
+          <a-dropdown :trigger="['hover']" :get-popup-container="getParNode">
             <a-button>{{ $t('toggleTag') }}</a-button>
             <template #overlay>
               <a-menu @click="emit('contextMenuClick', $event, file, idx)">
@@ -150,13 +145,22 @@ const baseInfoTags = computed(() => {
             <a-button>{{ t('openContextMenu') }}</a-button>
             <template #overlay>
               <a-menu @click="emit('contextMenuClick', $event, file, idx)">
-                <a-menu-item key="send2txt2img">{{ $t('sendToTxt2img') }}</a-menu-item>
-                <a-menu-item key="send2img2img">{{ $t('sendToImg2img') }}</a-menu-item>
-                <a-menu-item key="send2inpaint">{{ $t('sendToInpaint') }}</a-menu-item>
-                <a-menu-item key="send2extras">{{ $t('sendToExtraFeatures') }}</a-menu-item>
+                <template v-if="global.conf?.launch_mode !== 'server'">
+                  <a-menu-item key="send2txt2img">{{ $t('sendToTxt2img') }}</a-menu-item>
+                  <a-menu-item key="send2img2img">{{ $t('sendToImg2img') }}</a-menu-item>
+                  <a-menu-item key="send2inpaint">{{ $t('sendToInpaint') }}</a-menu-item>
+                  <a-menu-item key="send2extras">{{ $t('sendToExtraFeatures') }}</a-menu-item>
+                  <a-sub-menu key="sendToThirdPartyExtension" :title="$t('sendToThirdPartyExtension')">
+                    <a-menu-item key="send2controlnet-txt2img">ControlNet - {{ $t('t2i') }}</a-menu-item>
+                    <a-menu-item key="send2controlnet-img2img">ControlNet - {{ $t('i2i') }}</a-menu-item>
+                    <a-menu-item key="send2outpaint">openOutpaint</a-menu-item>
+                  </a-sub-menu>
+                </template>
+                <a-menu-item key="send2BatchDownload">{{ $t('sendToBatchDownload') }}</a-menu-item>
                 <a-menu-item key="send2savedDir">{{ $t('send2savedDir') }}</a-menu-item>
-                <a-menu-item key="deleteFiles" :disabled="toRawFileUrl(file) === global.fullscreenPreviewInitialUrl">{{
-                  $t('deleteSelected') }}</a-menu-item>
+                <a-menu-item key="deleteFiles" :disabled="toRawFileUrl(file) === global.fullscreenPreviewInitialUrl">
+                  {{ $t('deleteSelected') }}
+                </a-menu-item>
                 <a-menu-item key="previewInNewWindow">{{ $t('previewInNewWindow') }}</a-menu-item>
                 <a-menu-item key="download">{{ $t('download') }}</a-menu-item>
                 <a-menu-item key="copyPreviewUrl">{{ $t('copySourceFilePreviewLink') }}</a-menu-item>
@@ -179,6 +183,11 @@ const baseInfoTags = computed(() => {
             </span>
           </span>
         </div>
+        <div class="tags-container" v-if="selectedTag">
+          <a-tag v-for="tag in selectedTag" :key="tag.id" :color="tagStore.getColor(tag.name)">
+            {{ tag.name }}
+          </a-tag>
+        </div>
         {{ imageGenInfo }}
       </div>
     </div>
@@ -197,6 +206,14 @@ const baseInfoTags = computed(() => {
   padding: 8px 16px;
   box-shadow: 0px 0px 4px var(--zp-secondary);
   border-radius: 4px;
+
+  .tags-container {
+    &>* {
+      margin-right: 4px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+  }
 
   .container {
     height: 100%;

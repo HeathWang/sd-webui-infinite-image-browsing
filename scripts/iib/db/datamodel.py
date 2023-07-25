@@ -1,23 +1,35 @@
 from sqlite3 import Connection, connect
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, TypedDict
 from scripts.iib.tool import (
     cwd,
     get_modified_date,
     human_readable_size,
     tags_translate,
     is_dev,
+    find,
+    unique_by
 )
 from contextlib import closing
 import os
 import threading
 
-
+class FileInfoDict(TypedDict):
+    type: str
+    date: float
+    size: int
+    name: str
+    bytes: bytes
+    created_time: float
+    fullpath: str
+    
 class DataBase:
     local = threading.local()
 
     _initing = False
 
     num = 0
+
+    path = "iib.db"
 
     @classmethod
     def get_conn(clz) -> Connection:
@@ -32,7 +44,7 @@ class DataBase:
     @classmethod
     def init(clz):
         # 创建连接并打开数据库
-        conn = connect(os.path.join(cwd, "iib.db"))
+        conn = connect(clz.path if os.path.isabs(clz.path) else os.path.join(cwd, clz.path))
         try:            
             Floder.create_table(conn)
             ImageTag.create_table(conn)
@@ -55,7 +67,7 @@ class Image:
         self.size = size
         self.date = date
 
-    def to_file_info(self):
+    def to_file_info(self) -> FileInfoDict:
         return {
             "type": "file",
             "id": self.id,
@@ -74,6 +86,14 @@ class Image:
                 (self.path, self.exif, self.size, self.date),
             )
             self.id = cur.lastrowid
+
+    def update_path(self, conn: Connection, new_path: str):
+        self.path = os.path.normpath(new_path)
+        with closing(conn.cursor()) as cur:
+            cur.execute(
+                "UPDATE image SET path = ? WHERE id = ?",
+                (self.path, self.id)
+            )
 
     @classmethod
     def get(cls, conn: Connection, id_or_path):
@@ -170,7 +190,7 @@ class Image:
                 deleted_ids.append(img.id)
         cls.safe_batch_remove(conn, deleted_ids)
         return images
-
+    
 
 class Tag:
     def __init__(self, name: str, score: int, type: str, count=0):
@@ -266,6 +286,8 @@ class Tag:
                 VALUES ("like", 0, "custom", 0);
                 """
             )
+    
+
 
 
 class ImageTag:
@@ -395,7 +417,31 @@ class ImageTag:
                     deleted_ids.append(img.id)
             Image.safe_batch_remove(conn, deleted_ids)
             return images
-
+        
+    @classmethod
+    def batch_get_tags_by_path(cls, conn: Connection, paths: List[str], type = "custom") -> Dict[str, List[Tag]]:
+        if not paths:
+            return {}
+        tag_dict = {}
+        with closing(conn.cursor()) as cur:
+            placeholders = ",".join("?" * len(paths))
+            query = f"""
+                SELECT image.path, tag.* FROM image_tag
+                INNER JOIN image ON image_tag.image_id = image.id
+                INNER JOIN tag ON image_tag.tag_id = tag.id
+                WHERE tag.type = '{type}' AND image.path IN ({placeholders})
+            """
+            cur.execute(query, paths)
+            rows = cur.fetchall()
+            for row in rows:
+                path = row[0]
+                tag = Tag.from_row(row[1:])
+                if path in tag_dict:
+                    tag_dict[path].append(tag)
+                else:
+                    tag_dict[path] = [tag]
+        return tag_dict
+    
     @classmethod
     def remove(
         cls,
@@ -469,6 +515,10 @@ class Floder:
         with closing(conn.cursor()) as cur:
             cur.execute("SELECT * FROM folders")
             result_set = cur.fetchall()
+            extra_paths = ExtraPath.get_extra_paths(conn)
+            for ep in extra_paths:
+                if not find(result_set, lambda x : x[1] == ep.path):
+                    dirs.append(ep.path)
             for row in result_set:
                 folder_path = row[1]
                 if (
@@ -476,7 +526,7 @@ class Floder:
                     and get_modified_date(folder_path) != row[2]
                 ):
                     dirs.append(folder_path)
-            return dirs
+            return unique_by(dirs, os.path.normpath)
         
     @classmethod
     def remove_folder(cls, conn: Connection, folder_path: str):
@@ -499,7 +549,7 @@ class ExtraPath:
             )
 
     @classmethod
-    def get_extra_paths(cls, conn, type: str = "scanned"):
+    def get_extra_paths(cls, conn, type: str = "scanned") -> List['ExtraPath']:
         query = "SELECT * FROM extra_path"
         params = ()
         if type:

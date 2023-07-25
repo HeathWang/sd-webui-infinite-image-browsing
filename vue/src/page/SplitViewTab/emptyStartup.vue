@@ -1,19 +1,27 @@
 <script lang="ts" setup>
 import { useGlobalStore, type TabPane } from '@/store/useGlobalStore'
 import { uniqueId } from 'lodash-es'
-import { computed } from 'vue'
+import { computed, h, ref } from 'vue'
 import { ok } from 'vue3-ts-util'
-import { FileDoneOutlined, LockOutlined } from '@/icon'
+import { FileDoneOutlined, LockOutlined, PlusOutlined } from '@/icon'
 import { t } from '@/i18n'
 import { cloneDeep } from 'lodash-es'
+import { addScannedPath } from '@/api/db'
+import { globalEvents } from '@/util'
+import { Input, Modal, message } from 'ant-design-vue'
+import { open } from '@tauri-apps/api/dialog'
+import { checkPathExists } from '@/api'
+import { useImgSliStore } from '@/store/useImgSli'
 
 const global = useGlobalStore()
+const imgsli = useImgSliStore()
 const props = defineProps<{ tabIdx: number; paneIdx: number }>()
 const compCnMap: Partial<Record<TabPane['type'], string>> = {
   local: t('local'),
   'tag-search': t('imgSearch'),
   'fuzzy-search': t('fuzzy-search'),
-  'global-setting': t('globalSettings')
+  'global-setting': t('globalSettings'),
+  'batch-download': t('batchDownload') + ' / ' + t('archive')
 }
 const openInCurrentTab = (type: TabPane['type'], path?: string, walkMode = false) => {
   let pane: TabPane
@@ -23,6 +31,7 @@ const openInCurrentTab = (type: TabPane['type'], path?: string, walkMode = false
       return
     case 'global-setting':
     case 'tag-search':
+    case 'batch-download':
     case 'fuzzy-search':
     case 'empty':
       pane = { type, name: compCnMap[type]!, key: Date.now() + uniqueId() }
@@ -57,7 +66,49 @@ const previewInNewWindow = () => window.parent.open('/infinite_image_browsing')
 const restoreRecord = () => {
   ok(lastRecord.value)
   global.tabList = cloneDeep(lastRecord.value.tabs)
+}
 
+const addToSearchScanPathAndQuickMove = async () => {
+  let path: string
+  if (import.meta.env.TAURI_ARCH) {
+    const ret = await open({ directory: true })
+    if (typeof ret === 'string') {
+      path = ret
+    } else {
+      return
+    }
+  } else {
+    path = await new Promise<string>((resolve) => {
+      const key = ref('')
+      Modal.confirm({
+        title: t('inputTargetFolderPath'),
+        content: () => {
+          return h(Input, {
+            value: key.value,
+            'onUpdate:value': (v: string) => (key.value = v)
+          })
+        },
+        async onOk () {
+          const path = key.value
+          const res = await checkPathExists([path])
+          if (res[path]) {
+            resolve(key.value)
+          } else {
+            message.error(t('pathDoesNotExist'))
+          }
+        }
+      })
+    })
+  }
+  Modal.confirm({
+    content: t('confirmToAddToQuickMove'),
+    async onOk () {
+      await addScannedPath(path)
+      message.success(t('addComplete'))
+      globalEvents.emit('searchIndexExpired')
+      globalEvents.emit('updateGlobalSetting')
+    }
+  })
 }
 </script>
 <template>
@@ -67,9 +118,9 @@ const restoreRecord = () => {
       <div v-if="global.conf?.enable_access_control && global.dontShowAgain" style="margin-left: 16px;font-size: 1.5em;">
         <LockOutlined title="Access Control mode" style="vertical-align: text-bottom;" />
       </div>
-      <div flex-placeholder />     
-       <a href="https://github.com/zanllp/sd-webui-infinite-image-browsing" target="_blank"
-        class="last-record">{{ $t('document') }}</a>
+      <div flex-placeholder />
+      <a href="https://github.com/zanllp/sd-webui-infinite-image-browsing" target="_blank" class="last-record">{{
+        $t('document') }}</a>
       <a href="https://github.com/zanllp/sd-webui-infinite-image-browsing/issues/131" target="_blank"
         class="last-record">{{ $t('changlog') }}</a>
       <a href="https://github.com/zanllp/sd-webui-infinite-image-browsing/issues/90" target="_blank"
@@ -89,8 +140,19 @@ const restoreRecord = () => {
         <LockOutlined></LockOutlined>
       </template>
     </a-alert>
+    <a-alert show-icon v-if="!global.dontShowAgainNewImgOpts">
+      <template #message>
+        <div class="access-mode-message">
+          <div>
+            {{ $t('majorUpdateCustomCellSizeTips') }}
+          </div>
+          <div flex-placeholder />
+          <a @click.prevent="global.dontShowAgainNewImgOpts = true">{{ $t('dontShowAgain') }}</a>
+        </div>
+      </template>
+    </a-alert>
     <div class="content">
-      <div class="quick-start" v-if="walkModeSupportedDir.length">
+      <div class="feature-item" v-if="walkModeSupportedDir.length">
         <h2>{{ $t('walkMode') }}</h2>
         <ul>
           <li v-for="item in walkModeSupportedDir" :key="item.dir" class="item">
@@ -98,21 +160,29 @@ const restoreRecord = () => {
           </li>
         </ul>
       </div>
-      <div class="quick-start" v-if="global.quickMovePaths.length">
+      <div class="feature-item" v-if="global.quickMovePaths.length">
         <h2>{{ $t('launchFromQuickMove') }}</h2>
         <ul>
+          <li @click="addToSearchScanPathAndQuickMove" class="item" style="text-align: ;">
+            <span class="text line-clamp-1">
+              <PlusOutlined /> {{ $t('add') }}
+            </span>
+          </li>
           <li v-for="dir in global.quickMovePaths" :key="dir.key" class="item"
             @click.prevent="openInCurrentTab('local', dir.dir)">
             <span class="text line-clamp-1">{{ dir.zh }}</span>
           </li>
         </ul>
       </div>
-      <div class="quick-start">
+      <div class="feature-item">
         <h2>{{ $t('launch') }}</h2>
         <ul>
           <li v-for="comp in Object.keys(compCnMap) as TabPane['type'][]" :key="comp" class="item"
             @click.prevent="openInCurrentTab(comp)">
             <span class="text line-clamp-1">{{ compCnMap[comp] }}</span>
+          </li>
+          <li class="item" @click="imgsli.opened = true">
+            <span class="text line-clamp-1">{{ $t('imgCompare') }}</span>
           </li>
           <li class="item" v-if="canpreviewInNewWindow" @click="previewInNewWindow">
             <span class="text line-clamp-1">{{ $t('openInNewWindow') }}</span>
@@ -122,7 +192,7 @@ const restoreRecord = () => {
           </li>
         </ul>
       </div>
-      <div class="quick-start" v-if="global.recent.length">
+      <div class="feature-item" v-if="global.recent.length">
         <h2>{{ $t('recent') }}</h2>
         <ul>
           <li v-for="item in global.recent" :key="item.key" class="item"
@@ -189,7 +259,7 @@ const restoreRecord = () => {
   margin-top: 16px;
 }
 
-.quick-start {
+.feature-item {
   background-color: var(--zp-primary-background);
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
@@ -221,7 +291,7 @@ const restoreRecord = () => {
   }
 }
 
-.quick-start h2 {
+.feature-item h2 {
   margin-top: 0;
   margin-bottom: 20px;
   font-size: 20px;

@@ -1,10 +1,10 @@
 <script lang="ts" setup>
-import { onMounted, ref } from 'vue'
-import fileItemCell from '@/page/fileTransfer/FileItem.vue'
+import { nextTick, onMounted, ref } from 'vue'
+import fileItemCell from '@/components/FileItem.vue'
 import '@zanllp/vue-virtual-scroller/dist/vue-virtual-scroller.css'
 // @ts-ignore
 import { RecycleScroller } from '@zanllp/vue-virtual-scroller'
-import { toRawFileUrl } from '@/page/fileTransfer/hook'
+import { toRawFileUrl } from '@/util/file'
 import { getDbBasicInfo, getExpiredDirs, getImagesBySubstr, updateImageData, type DataBaseBasicInfo } from '@/api/db'
 import { copy2clipboardI18n, makeAsyncFunctionSingle, useGlobalEventListen } from '@/util'
 import fullScreenContextMenu from '@/page/fileTransfer/fullScreenContextMenu.vue'
@@ -32,7 +32,10 @@ const {
   scroller,
   showMenuIdx,
   onFileDragStart,
-  onFileDragEnd
+  onFileDragEnd,
+  cellWidth,
+  onScroll,
+  updateImageTag
 } = useImageSearch()
 const substr = ref('')
 
@@ -55,22 +58,27 @@ const onUpdateBtnClick = makeAsyncFunctionSingle(
 )
 const query = async () => {
   images.value = await queue.pushAction(() => getImagesBySubstr(substr.value)).res
-  scroller.value?.scrollToItem(0)
+  await nextTick()
+  updateImageTag()
+  scroller.value!.scrollToItem(0)
   if (!images.value.length) {
     message.info(t('fuzzy-search-noResults'))
   }
 }
 
-useGlobalEventListen('return-to-iib', async () => {
+useGlobalEventListen('returnToIIB', async () => {
   const res = await queue.pushAction(getExpiredDirs).res
   info.value!.expired = res.expired
 })
 
+useGlobalEventListen('searchIndexExpired', () => info.value && (info.value.expired = true))
+
 </script>
 <template>
   <div class="container" ref="stackViewEl">
-    <div class="search-bar" v-if="info" >
-      <a-input v-model:value="substr" :placeholder="$t('fuzzy-search-placeholder')" :disabled="!queue.isIdle" @keydown.enter="query"/>
+    <div class="search-bar" v-if="info">
+      <a-input v-model:value="substr" :placeholder="$t('fuzzy-search-placeholder')" :disabled="!queue.isIdle"
+        @keydown.enter="query" />
       <AButton @click="onUpdateBtnClick" :loading="!queue.isIdle" type="primary" v-if="info.expired || !info.img_count">
         {{ info.img_count === 0 ? $t('generateIndexHint') : $t('UpdateIndex') }}</AButton>
       <AButton v-else type="primary" @click="query" :loading="!queue.isIdle" :disabled="!substr">{{
@@ -94,14 +102,13 @@ useGlobalEventListen('return-to-iib', async () => {
         </ASkeleton>
       </AModal>
       <RecycleScroller ref="scroller" class="file-list" v-if="images" :items="images" :item-size="itemSize.first"
-        key-field="fullpath" :item-secondary-size="itemSize.second" :gridItems="gridItems">
+        key-field="fullpath" :item-secondary-size="itemSize.second" :gridItems="gridItems" @scroll="onScroll">
         <template v-slot="{ item: file, index: idx }">
           <!-- idx 和file有可能丢失 -->
           <file-item-cell :idx="idx" :file="file" v-model:show-menu-idx="showMenuIdx" @file-item-click="onFileItemClick"
             :full-screen-preview-image-url="images[previewIdx] ? toRawFileUrl(images[previewIdx]) : ''"
-            :selected="multiSelectedIdxs.includes(idx)" @context-menu-click="onContextMenuClickU"
-            @dragstart="onFileDragStart" @dragend="onFileDragEnd"
-            @preview-visible-change="onPreviewVisibleChange" />
+            :cell-width="cellWidth" :selected="multiSelectedIdxs.includes(idx)" @context-menu-click="onContextMenuClickU"
+            @dragstart="onFileDragStart" @dragend="onFileDragEnd" @preview-visible-change="onPreviewVisibleChange" />
         </template>
       </RecycleScroller>
       <div v-if="previewing" class="preview-switch">

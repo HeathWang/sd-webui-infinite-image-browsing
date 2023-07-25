@@ -17,13 +17,14 @@ const global = useGlobalStore()
 const compMap: Record<TabPane['type'], ReturnType<typeof defineAsyncComponent>> = {
   local: defineAsyncComponent(() => import('@/page/fileTransfer/stackView.vue')),
   empty: defineAsyncComponent(() => import('./emptyStartup.vue')),
-  'global-setting': defineAsyncComponent(() => import('@/page/globalSetting.vue')),
+  'global-setting': defineAsyncComponent(() => import('@/page/globalSetting/globalSetting.vue')),
   'tag-search-matched-image-grid': defineAsyncComponent(
     () => import('@/page/TagSearch/MatchedImageGrid.vue')
   ),
   'tag-search': defineAsyncComponent(() => import('@/page/TagSearch/TagSearch.vue')),
   'fuzzy-search': defineAsyncComponent(() => import('@/page/TagSearch/SubstrSearch.vue')),
   'img-sli': defineAsyncComponent(() => import('@/page/ImgSli/ImgSliPagePane.vue')),
+  'batch-download': defineAsyncComponent(() => import('@/page/batchDownload/batchDownload.vue'))
 }
 const onEdit = (idx: number, targetKey: any, action: string) => {
   const tab = global.tabList[idx]
@@ -77,7 +78,7 @@ watch(
   { immediate: true, deep: true }
 )
 
-const emitReturnToIIB = debounce(() => globalEvents.emit('return-to-iib'), 100)
+const emitReturnToIIB = debounce(() => globalEvents.emit('returnToIIB'), 100)
 
 tryOnMounted(async () => {
   const par = window.parent as Window & { get_uiCurrentTabContent (): undefined | HTMLButtonElement, onUiTabChange (cb: Fn): void }

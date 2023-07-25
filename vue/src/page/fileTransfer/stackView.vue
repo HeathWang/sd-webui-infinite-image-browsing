@@ -8,23 +8,23 @@ import {
   useLocation,
   usePreview,
   useFileItemActions,
-  toRawFileUrl,
   stackCache,
-  useMobileOptimization,
-  viewModes
+  useMobileOptimization
 } from './hook'
 import { SearchSelect } from 'vue3-ts-util'
+import { toRawFileUrl } from '@/util/file'
 
 import 'multi-nprogress/nprogress.css'
 // @ts-ignore
 import { RecycleScroller } from '@zanllp/vue-virtual-scroller'
 import '@zanllp/vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { watch } from 'vue'
-import FileItem from './FileItem.vue'
+import FileItem from '@/components/FileItem.vue'
 import fullScreenContextMenu from './fullScreenContextMenu.vue'
 import { copy2clipboardI18n } from '@/util'
 import { openFolder } from '@/api'
 import { sortMethods } from './fileSort'
+import { isTauri } from '@/util/env'
 
 const global = useGlobalStore()
 const props = defineProps<{
@@ -49,29 +49,24 @@ const {
 } = useHookShareState().toRefs()
 const { currLocation, currPage, refresh, copyLocation, back, openNext, stack, quickMoveTo,
   addToSearchScanPathAndQuickMove, searchPathInfo, locInputValue, isLocationEditing,
-  onLocEditEnter, onEditBtnClick, share
-} = useLocation(props)
+  onLocEditEnter, onEditBtnClick, share, selectAll, onCreateFloderBtnClick
+} = useLocation()
 const {
   gridItems,
   sortMethodConv,
   moreActionsDropdownShow,
   sortedFiles,
   sortMethod,
-  viewMode,
   itemSize,
   loadNextDir,
   loadNextDirLoading,
   canLoadNext,
   onScroll,
-
-} = useFilesDisplay(props)
+  cellWidth
+} = useFilesDisplay()
 const { onDrop, onFileDragStart,  onFileDragEnd } = useFileTransfer()
-const { onFileItemClick, onContextMenuClick, showGenInfo, imageGenInfo, q } = useFileItemActions(
-  props,
-  { openNext }
-)
-const { previewIdx, onPreviewVisibleChange, previewing, previewImgMove, canPreview } =
-  usePreview(props)
+const { onFileItemClick, onContextMenuClick, showGenInfo, imageGenInfo, q } = useFileItemActions({ openNext })
+const { previewIdx, onPreviewVisibleChange, previewing, previewImgMove, canPreview } = usePreview()
 const { showMenuIdx } = useMobileOptimization()
 
 watch(
@@ -132,12 +127,14 @@ watch(
 
           <AButton size="small" v-if="isLocationEditing" @click="onLocEditEnter" type="primary">{{ $t('go') }}</AButton>
           <div v-else style="margin-left: 8px;">
-            <a @click.prevent="copyLocation" style="margin-right: 4px;">{{ $t('copy') }}</a> <a @click.prevent.stop="onEditBtnClick">{{ $t('edit') }}</a>
+            <a @click.prevent="copyLocation" style="margin-right: 4px;">{{ $t('copy') }}</a> 
+            <a @click.prevent.stop="onEditBtnClick">{{ $t('edit') }}</a>
           </div>
         </div>
         <div class="actions">
           <a class="opt" @click.prevent="refresh"> {{ $t('refresh') }} </a>
-          <a class="opt" @click.prevent="share"> {{ $t('share') }} </a>
+          <a class="opt" @click.prevent.stop="selectAll"> {{ $t('selectAll') }} </a>
+          <a class="opt" @click.prevent="share" v-if="!isTauri"> {{ $t('share') }} </a>
           <a-dropdown>
             <a class="opt" @click.prevent>
               {{ $t('quickMove') }}
@@ -169,9 +166,8 @@ watch(
                   labelCol: { span: 6 },
                   wrapperCol: { span: 18 }
                 }">
-                  <a-form-item :label="$t('viewMode')">
-                    <search-select v-model:value="viewMode" @click.stop :conv="{ value: v => v, text: v => $t(v) }"
-                      :options="viewModes" />
+                  <a-form-item :label="$t('gridCellWidth')">
+                    <numInput v-model="cellWidth" :max="1024" :min="64" :step="64" />
                   </a-form-item>
                   <a-form-item :label="$t('sortingMethod')">
                     <search-select v-model:value="sortMethod" @click.stop :conv="sortMethodConv" :options="sortMethods" />
@@ -184,6 +180,9 @@ watch(
                   </div>
                   <div style="padding: 4px;">
                     <a @click.prevent="openFolder(currLocation + '/')">{{ $t('openWithLocalFileBrowser') }}</a>
+                  </div>
+                  <div style="padding: 4px;">
+                    <a @click.prevent="onCreateFloderBtnClick">{{ $t('createFolder') }}</a>
                   </div>
                 </a-form>
               </div>
@@ -198,14 +197,16 @@ watch(
             <!-- idx 和file有可能丢失 -->
             <file-item :idx="idx" :file="file"
               :full-screen-preview-image-url="sortedFiles[previewIdx] ? toRawFileUrl(sortedFiles[previewIdx]) : ''"
-              v-model:show-menu-idx="showMenuIdx" :selected="multiSelectedIdxs.includes(idx)" :view-mode="viewMode"
-              @file-item-click="onFileItemClick" @dragstart="onFileDragStart" @dragend=" onFileDragEnd"
+              v-model:show-menu-idx="showMenuIdx" :selected="multiSelectedIdxs.includes(idx)" :cell-width="cellWidth"
+              @file-item-click="onFileItemClick" @dragstart="onFileDragStart" @dragend="onFileDragEnd"
               @preview-visible-change="onPreviewVisibleChange" @context-menu-click="onContextMenuClick" />
           </template>
           <template v-if="props.walkModePath" #after>
-            <AButton @click="loadNextDir" :loading="loadNextDirLoading" block type="primary" :disabled="!canLoadNext"
-              ghost>
-              {{ $t('loadNextPage') }}</AButton>
+            <div style="padding: 16px 0 32px;">
+              <AButton @click="loadNextDir" :loading="loadNextDirLoading" block type="primary" :disabled="!canLoadNext"
+                ghost>
+                {{ $t('loadNextPage') }}</AButton>
+            </div>
           </template>
         </RecycleScroller>
         <div v-if="previewing" class="preview-switch">

@@ -1,11 +1,11 @@
 <script lang="ts" setup>
-import fileItemCell from '@/page/fileTransfer/FileItem.vue'
+import fileItemCell from '@/components/FileItem.vue'
 import '@zanllp/vue-virtual-scroller/dist/vue-virtual-scroller.css'
 // @ts-ignore
 import { RecycleScroller } from '@zanllp/vue-virtual-scroller'
-import { toRawFileUrl } from '@/page/fileTransfer/hook'
+import { toRawFileUrl } from '@/util/file'
 import { getImagesByTags, type MatchImageByTagsReq } from '@/api/db'
-import { watch } from 'vue'
+import { nextTick, watch } from 'vue'
 import { copy2clipboardI18n } from '@/util'
 import fullScreenContextMenu from '@/page/fileTransfer/fullScreenContextMenu.vue'
 import { LeftCircleOutlined, RightCircleOutlined } from '@/icon'
@@ -30,7 +30,10 @@ const {
   scroller,
   showMenuIdx,
   onFileDragStart,
-  onFileDragEnd
+  onFileDragEnd,
+  cellWidth,
+  onScroll,
+  updateImageTag
 } = useImageSearch()
 
 const props = defineProps<{
@@ -45,7 +48,9 @@ watch(
   async () => {
     const { res } = queue.pushAction(() => getImagesByTags(props.selectedTagIds))
     images.value = await res
-    scroller.value?.scrollToItem(0)
+    await nextTick()
+    updateImageTag()
+    scroller.value!.scrollToItem(0)
   },
   { immediate: true }
 )
@@ -80,11 +85,13 @@ watch(
         key-field="fullpath"
         :item-secondary-size="itemSize.second"
         :gridItems="gridItems"
+        @scroll="onScroll"
       >
         <template v-slot="{ item: file, index: idx }">
           <file-item-cell
             :idx="idx"
             :file="file"
+            :cell-width="cellWidth"
             v-model:show-menu-idx="showMenuIdx"
             @dragstart="onFileDragStart"
             @dragend="onFileDragEnd"
