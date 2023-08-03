@@ -92,13 +92,13 @@ class AppUtils:
         self.__init__(*args, **kwargs)
 
     @staticmethod
-    def async_run(app: FastAPI, port: int = default_port) -> Coroutine:
+    def async_run(app: FastAPI, port: int = default_port, host = default_host) -> Coroutine:
         """
         用于从异步运行的 FastAPI，在 Jupyter Notebook 环境中非常有用
         """
         # 不建议改成 async def，并且用 await 替换 return，
         # 因为这样会失去对 server.serve() 的控制。
-        config = uvicorn.Config(app, host=default_host, port=port)
+        config = uvicorn.Config(app, host=host, port=port)
         server = uvicorn.Server(config)
         return server.serve()
 
@@ -148,6 +148,9 @@ def setup_parser() -> argparse.ArgumentParser:
         description="A fast and powerful image browser for Stable Diffusion webui."
     )
     parser.add_argument(
+        "--host", type=str, default=default_host, help="The host to use"
+    )
+    parser.add_argument(
         "--port", type=int, help="The port to use", default=default_port
     )
     parser.add_argument(
@@ -186,7 +189,7 @@ def setup_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def launch_app(port: int = default_port, *args, **kwargs: dict) -> None:
+def launch_app(port: int = default_port, host: str = default_host, *args, **kwargs: dict) -> None:
     """
     Launches the application on the specified port.
 
@@ -196,10 +199,10 @@ def launch_app(port: int = default_port, *args, **kwargs: dict) -> None:
     """
     app_utils = AppUtils(*args, **kwargs)
     app = app_utils.get_root_browser_app()
-    uvicorn.run(app, host=default_host, port=port)
+    uvicorn.run(app, host=host, port=port)
 
 
-async def async_launch_app(port: int = default_port, *args, **kwargs: dict) -> None:
+async def async_launch_app(port: int = default_port, host: str = default_host, *args, **kwargs: dict) -> None:
     """
     Asynchronously launches the application on the specified port.
 
@@ -209,7 +212,7 @@ async def async_launch_app(port: int = default_port, *args, **kwargs: dict) -> N
     """
     app_utils = AppUtils(*args, **kwargs)
     app = app_utils.get_root_browser_app()
-    await app_utils.async_run(app, port=port)
+    await app_utils.async_run(app, host=host, port=port)
 
 
 if __name__ == "__main__":

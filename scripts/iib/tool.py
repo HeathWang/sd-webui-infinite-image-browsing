@@ -11,6 +11,7 @@ import piexif
 import piexif.helper
 import json
 import zipfile
+from PIL import Image
 
 sd_img_dirs = [
     "outdir_txt2img_samples",
@@ -30,6 +31,8 @@ cwd = os.getcwd() if is_nuitka else os.path.normpath(os.path.join(__file__, "../
 is_win = platform.system().lower().find("windows") != -1
 
 
+
+    
 try:
     from dotenv import load_dotenv
 
@@ -85,6 +88,11 @@ def normalize_paths(paths: List[str], base = cwd):
         if os.path.exists(abs_path):
             res.append(os.path.normpath(abs_path))
     return res
+
+def to_abs_path(path):
+    if not os.path.isabs(path):
+        path = os.path.join(os.getcwd(), path)
+    return os.path.normpath(path)
 
 
 def get_valid_img_dirs(
@@ -284,12 +292,54 @@ def findIndex(lst, comparator):
 
 
 def get_img_geninfo_txt_path(path: str):
-    txt_path = re.sub(r"\..+$", ".txt", path)
+    txt_path = re.sub(r"\.\w+$", ".txt", path)
     if os.path.exists(txt_path):
         return txt_path
 
+def is_img_created_by_comfyui(img: Image):
+    return img.info.get('prompt') and img.info.get('workflow')
 
-def read_info_from_image(image, path="") -> str:
+def get_comfyui_exif_data(img: Image):
+    prompt = img.info.get('prompt')
+    if not prompt:
+        return {}
+    meta_key = '3'
+    data: Dict[str, any] = json.loads(prompt)
+    for i in range(3, 32):
+        try:
+            i = str(i)
+            if data[i]["class_type"].startswith("KSampler"):
+                meta_key = i
+                break
+        except:
+            pass
+    meta = {}
+    KSampler_entry = data[meta_key]["inputs"]
+    meta["Sampler"] = KSampler_entry["sampler_name"]
+    meta["Model"] = data[KSampler_entry["model"][0]]["inputs"]["ckpt_name"]
+    def get_text_from_clip(idx: str) :
+        text = data[idx]["inputs"]["text"]
+        if isinstance(text, list): # type:CLIPTextEncode (NSP) mode:Wildcards
+            text = data[text[0]]["inputs"]["text"]
+        return text.strip()
+    pos_prompt = get_text_from_clip(KSampler_entry["positive"][0])
+    neg_prompt = get_text_from_clip(KSampler_entry["negative"][0])
+    pos_prompt_arr = unique_by(parse_prompt(pos_prompt)["pos_prompt"])
+    return {
+        "meta": meta,
+        "pos_prompt": pos_prompt_arr,
+        "pos_prompt_raw": pos_prompt,
+        "neg_prompt_raw" : neg_prompt
+    }
+
+def comfyui_exif_data_to_str(data):
+    res = data["pos_prompt_raw"] + "\nNegative prompt: " + data["neg_prompt_raw"] + "\n"
+    meta_arr = []
+    for k,v in data["meta"].items():
+        meta_arr.append(f'{k}: {v}')
+    return res + ", ".join(meta_arr)
+
+def read_sd_webui_gen_info_from_image(image: Image, path="") -> str:
     """
     Reads metadata from an image file.
 

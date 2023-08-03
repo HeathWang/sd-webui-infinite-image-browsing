@@ -3,10 +3,13 @@ import os
 import shutil
 import sqlite3
 from scripts.iib.tool import (
+    comfyui_exif_data_to_str,
+    get_comfyui_exif_data,
     human_readable_size,
+    is_img_created_by_comfyui,
     is_valid_image_path,
     temp_path,
-    read_info_from_image,
+    read_sd_webui_gen_info_from_image,
     get_formatted_date,
     is_win,
     cwd,
@@ -20,6 +23,7 @@ from scripts.iib.tool import (
     unique_by,
     create_zip_file,
     normalize_paths,
+    to_abs_path
 )
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -123,7 +127,8 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
                 seq(allowed_paths.split(","))
                 .map(path_map)
                 .filter(lambda x: x)
-                .to_list()
+                .to_list(),
+                os.getcwd()
             )
         else:
             paths = (
@@ -155,7 +160,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         try:
             if not parent_paths:
                 parent_paths = mem["all_scanned_paths"]
-            path = os.path.normpath(path)
+            path = to_abs_path(path)
             for parent_path in parent_paths:
                 if safe_commonpath([path, parent_path]) == parent_path:
                     return True
@@ -166,11 +171,9 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
     def is_path_trusted(path: str):
         if not enable_access_control:
             return True
-        if not os.path.isabs(path):
-            path = os.path.normpath(os.path.join(os.getcwd(), path))
         try:
             parent_paths = mem["all_scanned_paths"]
-            path = os.path.normpath(path)
+            path = to_abs_path(path)
             for parent_path in parent_paths:
                 if len(path) <= len(parent_path):
                     if parent_path.startswith(path):
@@ -354,6 +357,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             else:
                 if not os.path.exists(folder_path):
                     return {"files": []}
+                folder_path = to_abs_path(folder_path)
                 check_path_trust(folder_path)
                 folder_listing: List[os.DirEntry] = os.scandir(folder_path)
                 is_under_scanned_path = is_path_under_parents(folder_path)
@@ -479,7 +483,11 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
     @app.get(pre + "/image_geninfo", dependencies=[Depends(verify_secret)])
     async def image_geninfo(path: str):
         with Image.open(path) as img:
-            return read_info_from_image(img, path)
+            if is_img_created_by_comfyui(img):
+                params = get_comfyui_exif_data(img)
+                return comfyui_exif_data_to_str(params)
+            else:
+                return read_sd_webui_gen_info_from_image(img, path)
 
     class CheckPathExistsReq(BaseModel):
         paths: List[str]
@@ -632,12 +640,16 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             )
         img = DbImg.get(conn, path)
         if not img:
-            raise HTTPException(
-                400,
-                "你需要先通过图像搜索页生成索引"
-                if locale == "zh"
-                else "You need to generate an index through the image search page first.",
-            )
+            if  DbImg.count(conn):
+                update_image_data([os.path.dirname(path)])
+                img = DbImg.get(conn, path)
+            else: 
+                raise HTTPException(
+                    400,
+                    "你需要先通过图像搜索页生成索引"
+                    if locale == "zh"
+                    else "You need to generate an index through the image search page first.",
+                )
         tags = ImageTag.get_tags_for_image(
             conn=conn, image_id=img.id, type="custom", tag_id=req.tag_id
         )
@@ -726,5 +738,8 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     async def delete_scanned_path(scanned_path: ScannedPathModel):
+        path = to_abs_path(scanned_path.path)
+        if path in get_img_search_dirs():
+            raise HTTPException(400)
         conn = DataBase.get_conn()
-        ExtraPath.remove(conn, scanned_path.path)
+        ExtraPath.remove(conn, path)

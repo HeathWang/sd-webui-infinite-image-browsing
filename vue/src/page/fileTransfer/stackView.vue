@@ -8,8 +8,8 @@ import {
   useLocation,
   usePreview,
   useFileItemActions,
-  stackCache,
-  useMobileOptimization
+  useMobileOptimization,
+  stackCache
 } from './hook'
 import { SearchSelect } from 'vue3-ts-util'
 import { toRawFileUrl } from '@/util/file'
@@ -49,7 +49,8 @@ const {
 } = useHookShareState().toRefs()
 const { currLocation, currPage, refresh, copyLocation, back, openNext, stack, quickMoveTo,
   addToSearchScanPathAndQuickMove, searchPathInfo, locInputValue, isLocationEditing,
-  onLocEditEnter, onEditBtnClick, share, selectAll, onCreateFloderBtnClick
+  onLocEditEnter, onEditBtnClick, share, selectAll, onCreateFloderBtnClick, onWalkBtnClick,
+  showWalkButton
 } = useLocation()
 const {
   gridItems,
@@ -64,7 +65,7 @@ const {
   onScroll,
   cellWidth
 } = useFilesDisplay()
-const { onDrop, onFileDragStart,  onFileDragEnd } = useFileTransfer()
+const { onDrop, onFileDragStart, onFileDragEnd } = useFileTransfer()
 const { onFileItemClick, onContextMenuClick, showGenInfo, imageGenInfo, q } = useFileItemActions({ openNext })
 const { previewIdx, onPreviewVisibleChange, previewing, previewImgMove, canPreview } = usePreview()
 const { showMenuIdx } = useMobileOptimization()
@@ -127,12 +128,13 @@ watch(
 
           <AButton size="small" v-if="isLocationEditing" @click="onLocEditEnter" type="primary">{{ $t('go') }}</AButton>
           <div v-else style="margin-left: 8px;">
-            <a @click.prevent="copyLocation" style="margin-right: 4px;">{{ $t('copy') }}</a> 
+            <a @click.prevent="copyLocation" style="margin-right: 4px;">{{ $t('copy') }}</a>
             <a @click.prevent.stop="onEditBtnClick">{{ $t('edit') }}</a>
           </div>
         </div>
         <div class="actions">
           <a class="opt" @click.prevent="refresh"> {{ $t('refresh') }} </a>
+          <a class="opt" @click.prevent="onWalkBtnClick" v-if="showWalkButton"> Walk </a>
           <a class="opt" @click.prevent.stop="selectAll"> {{ $t('selectAll') }} </a>
           <a class="opt" @click.prevent="share" v-if="!isTauri"> {{ $t('share') }} </a>
           <a-dropdown>

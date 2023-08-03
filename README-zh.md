@@ -4,7 +4,7 @@
 
 > 百度云部分已独立，如果你有需要请[点此单独安装](https://github.com/zanllp/sd-webui-baidu-netdisk)
 
-[查看近期更新](https://github.com/zanllp/sd-webui-infinite-image-browsing/issues/131)
+[查看近期更新](https://github.com/zanllp/sd-webui-infinite-image-browsing/wiki/Change-log)
 
 <p style="text-align:center;margin:0 32px">不仅仅是图像浏览器，更是一个强大的图像管理器。精确的图像搜索配合多选操作进行筛选/归档/打包，成倍提高效率。更是支持以独立模式运行，无需SD-Webui</p>
 
@@ -22,7 +22,7 @@ https://github.com/zanllp/sd-webui-infinite-image-browsing/assets/25872019/807b8
 
 ### 🔍 图像搜索和收藏
 - 将会把Prompt、Model、Lora等信息转成标签，将根据使用频率排序以供进行精确的搜索。
-- 支持标签自动完成、翻译和自定义。
+- 支持标签自动完成、[翻译](https://github.com/zanllp/sd-webui-infinite-image-browsing/issues/39)和自定义。
 - 可通过在右键菜单切换自定义标签来实现图像收藏。
 - 支持类似谷歌的高级搜索。
 - 同样支持模糊搜索，您可以使用文件名或生成信息的一部分进行搜索。
@@ -71,8 +71,6 @@ https://github.com/zanllp/sd-webui-infinite-image-browsing/assets/25872019/807b8
 - 允许你一次性打包下载多个图像
 - 数据来源可以是搜索结果/普通的图像网格查看页面/walk模式等。使用拖拽或者“发送到”都可将图片添加待处理列表
 
-强烈推荐使用在`在新页面打开`，比塞在gradio里舒服太多。
-
 
 如果您喜欢这个项目并且觉得它对您有帮助，请考虑给我点个⭐️。这将对我持续开发和维护这个项目非常重要。如果您有任何建议或者想法，请随时在issue中提出，我会尽快回复。再次感谢您的支持！
 
@@ -93,7 +91,10 @@ https://github.com/zanllp/sd-webui-infinite-image-browsing/assets/25872019/807b8
 ## 作为使用Python运行的独立程序（不需要SD-webui）:
 请参考[Can the extension function without the web UI?](https://github.com/zanllp/sd-webui-infinite-image-browsing/issues/47)
 
+如果需要查看ComfyUI生成的图片相关，请先参考 https://github.com/zanllp/sd-webui-infinite-image-browsing/issues/202
+
 ## 作为桌面应用程序（不需要SD-webui和Python）:
+
 从仓库页面右侧的`releases`部分下载并安装程序。
 # 预览
 
@@ -103,7 +104,7 @@ https://github.com/zanllp/sd-webui-infinite-image-browsing/assets/25872019/807b8
 
 在第一次使用时，你需要点击等待索引的生成，我2万张图像的情况下大概需要15秒（配置是amd 5600x和pcie ssd）。后续使用他会检查文件夹是否发生变化，如果发生变化则需要重新生成索引,通常这个过程极快。
 
-图像搜索支持翻译，你需要在插件文件夹下放置一个tags-translate.csv的文件，你可以在issue中找到这个文件。欢迎其他语言的也分享出来，方便大家使用。
+图像搜索支持翻译，具体看这个 https://github.com/zanllp/sd-webui-infinite-image-browsing/issues/39 。
 <img width="1109" alt="image" src="https://github.com/zanllp/sd-webui-infinite-image-browsing/assets/25872019/62d1ffe3-2d1f-4449-803a-970273753855">
 <img width="620" alt="image" src="https://user-images.githubusercontent.com/25872019/234639759-2d270fe5-b24b-4542-b75a-a025ba78ec89.png">
 ## 图像比较

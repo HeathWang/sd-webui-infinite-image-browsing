@@ -1,10 +1,10 @@
 import { checkPathExists, type getGlobalSetting } from '@/api'
 import { t } from '@/i18n'
 import { pick, type ReturnTypeAsync } from '@/util'
-import { normalize } from '@/util/path'
+import { normalize, normalizeRelativePathToAbsolute } from '@/util/path'
 import { uniqBy } from 'lodash-es'
 
-export const getAutoCompletedTagList = async ({
+export const getQuickMovePaths = async ({
   global_setting,
   sd_cwd,
   home,
@@ -13,7 +13,6 @@ export const getAutoCompletedTagList = async ({
 }: ReturnTypeAsync<typeof getGlobalSetting>) => {
   const picked = pick(
     global_setting,
-    // 'additional_networks_extra_lora_path',
     'outdir_grids',
     'outdir_extras_samples',
     'outdir_img2img_grids',
@@ -31,6 +30,16 @@ export const getAutoCompletedTagList = async ({
     home,
     desktop: `${home}/Desktop`
   }
+  Object.keys(pathMap).forEach((_k) => {
+    const k = _k as keyof typeof pathMap
+    if (pathMap[k]) {
+      try {
+        pathMap[k] = normalizeRelativePathToAbsolute(pathMap[k], sd_cwd)
+      } catch (error) {
+        console.error(error)
+      }
+    }
+  })
   const exists = await checkPathExists(Object.values(pathMap).filter((v) => v))
   type Keys = keyof typeof pathMap
   const cnMap: Record<Keys, string> = {
@@ -47,11 +56,11 @@ export const getAutoCompletedTagList = async ({
     desktop: t('desktop')
   }
   const pathAliasMap = {
-    home: normalize(home),
-    [t('desktop')]: normalize(pathMap.desktop),
-    [t('workingFolder')]: normalize(cwd),
-    [t('t2i')]: picked.outdir_txt2img_samples &&  normalize(picked.outdir_txt2img_samples),
-    [t('i2i')]: picked.outdir_img2img_samples && normalize(picked.outdir_img2img_samples)
+    home: home,
+    [t('desktop')]: pathMap.desktop,
+    [t('workingFolder')]: cwd,
+    [t('t2i')]: pathMap.outdir_txt2img_samples,
+    [t('i2i')]: pathMap.outdir_img2img_samples
   }
   const findshortest = (path: string) => {
     path = normalize(path)
