@@ -232,6 +232,14 @@ def get_temp_path():
 
 temp_path = get_temp_path()
 
+def get_secret_key_required():
+    try:
+        from modules.shared import cmd_opts
+        return bool(cmd_opts.gradio_auth)
+    except:        
+        return False
+
+is_secret_key_required = get_secret_key_required()
 
 def get_enable_access_control():
     ctrl = os.getenv("IIB_ACCESS_CONTROL")
@@ -298,6 +306,9 @@ def get_img_geninfo_txt_path(path: str):
 
 def is_img_created_by_comfyui(img: Image):
     return img.info.get('prompt') and img.info.get('workflow')
+
+def is_img_created_by_comfyui_with_webui_gen_info(img: Image):
+    return img.info.get('parameters')
 
 def get_comfyui_exif_data(img: Image):
     prompt = img.info.get('prompt')

@@ -7,6 +7,7 @@ from scripts.iib.tool import (
     get_comfyui_exif_data,
     human_readable_size,
     is_img_created_by_comfyui,
+    is_img_created_by_comfyui_with_webui_gen_info,
     is_valid_image_path,
     temp_path,
     read_sd_webui_gen_info_from_image,
@@ -23,7 +24,8 @@ from scripts.iib.tool import (
     unique_by,
     create_zip_file,
     normalize_paths,
-    to_abs_path
+    to_abs_path,
+    is_secret_key_required
 )
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -76,6 +78,8 @@ async def write_permission_required():
 
 async def verify_secret(request: Request):
     if not secret_key:
+        if is_secret_key_required:
+            raise HTTPException(status_code=400, detail={ "type": "secret_key_required" })
         return
     token = request.cookies.get("IIB_S")
     if not token:
@@ -484,8 +488,16 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
     async def image_geninfo(path: str):
         with Image.open(path) as img:
             if is_img_created_by_comfyui(img):
-                params = get_comfyui_exif_data(img)
-                return comfyui_exif_data_to_str(params)
+                if is_img_created_by_comfyui_with_webui_gen_info(img):
+                    return read_sd_webui_gen_info_from_image(img, path)
+                else:
+                    try:                    
+                        params = get_comfyui_exif_data(img)
+                        return comfyui_exif_data_to_str(params)
+                    except:
+                        logger.error('parse comfyui image failed. prompt:')
+                        logger.error(img.info.get('prompt'))
+                        return ''
             else:
                 return read_sd_webui_gen_info_from_image(img, path)
 
