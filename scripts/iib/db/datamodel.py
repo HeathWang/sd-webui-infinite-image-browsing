@@ -1,4 +1,5 @@
 from sqlite3 import Connection, connect
+from enum import Enum
 from typing import Dict, List, Optional, TypedDict
 from scripts.iib.tool import (
     cwd,
@@ -21,6 +22,12 @@ class FileInfoDict(TypedDict):
     bytes: bytes
     created_time: float
     fullpath: str
+
+class Cursor:
+    def __init__(self, has_next = True, next = ''):
+        self.has_next = has_next
+        self.next = next
+
     
 class DataBase:
     local = threading.local()
@@ -74,6 +81,7 @@ class Image:
             "date": self.date,
             "created_date": self.date,
             "size": human_readable_size(self.size),
+            "is_under_scanned_path": True,
             "bytes": self.size,
             "name": os.path.basename(self.path),
             "fullpath": self.path,
@@ -163,6 +171,8 @@ class Image:
 
     @classmethod
     def safe_batch_remove(cls, conn: Connection, image_ids: List[int]) -> None:
+        if not(image_ids):
+            return
         with closing(conn.cursor()) as cur:
             try:
                 placeholders = ",".join("?" * len(image_ids))
@@ -174,12 +184,18 @@ class Image:
                 conn.commit()
 
     @classmethod
-    def find_by_substring(cls, conn: Connection, substring: str, limit: int = 500) -> List["Image"]:
+    def find_by_substring(cls, conn: Connection, substring: str, limit: int = 500, cursor = '') -> tuple[List["Image"], Cursor]:
+        api_cur = Cursor()
         with closing(conn.cursor()) as cur:
-            cur.execute("SELECT * FROM image WHERE path LIKE ? OR exif LIKE ? ORDER BY date DESC LIMIT ?", 
-                        (f"%{substring}%", f"%{substring}%", limit))
+            if cursor:
+                sql = f"SELECT * FROM image WHERE (path LIKE ? OR exif LIKE ?) AND (date < ?) ORDER BY date DESC LIMIT ?"
+                cur.execute(sql, (f"%{substring}%", f"%{substring}%", cursor, limit))
+            else:
+                sql = "SELECT * FROM image WHERE path LIKE ? OR exif LIKE ? ORDER BY date DESC LIMIT ?"
+                cur.execute(sql, (f"%{substring}%", f"%{substring}%", limit))
             rows = cur.fetchall()
-
+        
+        api_cur.has_next = len(rows) >= limit
         images = []
         deleted_ids = []
         for row in rows:
@@ -188,8 +204,10 @@ class Image:
                 images.append(img)
             else: 
                 deleted_ids.append(img.id)
-        cls.safe_batch_remove(conn, deleted_ids)
-        return images
+        cls.safe_batch_remove(conn, deleted_ids)        
+        if images:
+            api_cur.next = str(images[-1].date)
+        return images, api_cur
     
 
 class Tag:
@@ -352,8 +370,8 @@ class ImageTag:
 
     @classmethod
     def get_images_by_tags(
-        cls, conn: Connection, tag_dict: Dict[str, List[int]], limit: int = 500
-    ) -> List[Image]:
+        cls, conn: Connection, tag_dict: Dict[str, List[int]], limit: int = 500, cursor = ''
+    ) -> tuple[List[Image], Cursor]:
         query = """
             SELECT image.id, image.path, image.size,image.date
             FROM image
@@ -392,6 +410,9 @@ class ImageTag:
 )""".format(",".join("?" * len(tag_ids)))
                 )
                 params.extend(tag_ids)
+        if cursor:
+            where_clauses.append("(image.date < ?)")
+            params.append(cursor)
 
         if where_clauses:
             query += " WHERE " + " AND ".join(where_clauses)
@@ -404,6 +425,7 @@ class ImageTag:
 
         query += " ORDER BY date DESC LIMIT ?"
         params.append(limit)
+        api_cur = Cursor()
         with closing(conn.cursor()) as cur:
             cur.execute(query, params)
             rows = cur.fetchall()
@@ -416,7 +438,10 @@ class ImageTag:
                 else: 
                     deleted_ids.append(img.id)
             Image.safe_batch_remove(conn, deleted_ids)
-            return images
+            api_cur.has_next = len(rows) >= limit
+            if images:
+                api_cur.next = str(images[-1].date)
+            return images, api_cur
         
     @classmethod
     def batch_get_tags_by_path(cls, conn: Connection, paths: List[str], type = "custom") -> Dict[str, List[Tag]]:
@@ -534,27 +559,32 @@ class Floder:
         with closing(conn.cursor()) as cur:
             cur.execute("DELETE FROM folders WHERE path = ?", (folder_path,))
 
+class ExtraPathType(Enum):
+    scanned = 'scanned'
+    walk = 'walk'
+    cli_only = 'cli_access_only'
 
-# Define the ScannedPath class
 class ExtraPath:
-    def __init__(self, path: str, type: str = "scanned"):
+    def __init__(self, path: str, type: Optional[ExtraPathType] = None):
+        assert type
         self.path = os.path.normpath(path)
         self.type = type
 
     def save(self, conn):
+        assert self.type in [ExtraPathType.walk, ExtraPathType.scanned]
         with closing(conn.cursor()) as cur:
             cur.execute(
                 "INSERT INTO extra_path (path, type) VALUES (?, ?) ON CONFLICT (path) DO UPDATE SET type = ?",
-                (self.path, self.type, self.type),
+                (self.path, self.type.value, self.type.value),
             )
 
     @classmethod
-    def get_extra_paths(cls, conn, type: str = "scanned") -> List['ExtraPath']:
+    def get_extra_paths(cls, conn, type: Optional[ExtraPathType] = None) -> List['ExtraPath']:
         query = "SELECT * FROM extra_path"
         params = ()
         if type:
             query += " WHERE type = ?"
-            params = (type,)
+            params = (type.value,)
         with closing(conn.cursor()) as cur:
             cur.execute(query, params)
             rows = cur.fetchall()
@@ -562,19 +592,22 @@ class ExtraPath:
             for row in rows:
                 path = row[0]
                 if os.path.exists(path):
-                    paths.append(ExtraPath(path, row[1]))
+                    paths.append(ExtraPath(path, ExtraPathType(row[1])))
                 else:
                     cls.remove(conn, path)
             return paths
 
     @classmethod
-    def remove(cls, conn, path: str):
+    def remove(cls, conn, path: str, type: Optional[ExtraPathType] = None, img_search_dirs: Optional[List[str]] = []):
         with closing(conn.cursor()) as cur:
-            cur.execute(
-                "DELETE FROM extra_path WHERE path = ?",
-                (os.path.normpath(path),),
-            )
-            Floder.remove_folder(conn, path)
+            sql = "DELETE FROM extra_path WHERE path = ?"
+            path = os.path.normpath(path)
+            if type:
+                cur.execute(sql, (path,))
+            else:
+                cur.execute(sql + "AND type = ?", (path, type.value))
+            if path not in img_search_dirs:
+                Floder.remove_folder(conn, path)
             conn.commit()
 
     @classmethod

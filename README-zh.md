@@ -28,11 +28,12 @@ https://github.com/zanllp/sd-webui-infinite-image-browsing/assets/25872019/807b8
 - 同样支持模糊搜索，您可以使用文件名或生成信息的一部分进行搜索。
 - 支持添加自定义搜索路径，方便管理自己创建的文件夹集合。
 
-### 🖼️ 图像预览和“发送到”
+### 🖼️ 查看图像/视频和“发送到”
 - 支持查看图像生成信息。全屏预览下同样支持。
 - 支持将图像发送到其他选项卡和其他插件，例如 ControlNet, openOutpaint。
 - 支持全屏预览，并且支持在全屏预览下使用自定义快捷键进行操作
 - 支持在全屏预览模式下通过按下方向键或点击按钮移动到前一个或后一个图像。
+- 支持播放远程服务器上的视频文件
 
 ### 💻 多种使用方法
 - 您可以将其作为 SD-webui 的扩展安装。
@@ -53,8 +54,8 @@ https://github.com/zanllp/sd-webui-infinite-image-browsing/assets/25872019/807b8
 - 提供两张图片的并排比较
 
 ### 🌐 多语言支持
-- 目前支持简体中文/英文/德语。
-- 如果您希望添加新的语言，请参考 [i18n.ts](https://github.com/zanllp/sd-webui-infinite-image-browsing/blob/main/vue/src/i18n.ts) 并提交相关的代码。
+- 目前支持简体中文/繁体中文/英文/德语。
+- 如果您希望添加新的语言，请参考 [i18n.ts](https://github.com/zanllp/sd-webui-infinite-image-browsing/blob/main/vue/src/i18n/zh-hans.ts) 并提交相关的代码。
 
 
 ### 🔐 隐私和安全
@@ -97,7 +98,7 @@ https://github.com/zanllp/sd-webui-infinite-image-browsing/assets/25872019/807b8
 
 ## 作为桌面应用程序（不需要SD-webui和Python）:
 
-从仓库页面右侧的`releases`部分下载并安装程序。
+从仓库页面右侧的`releases`部分下载并安装程序。如果提升检测到病毒忽略即可这是误报。
 # 预览
 
 <img width="1920" alt="image" src="https://user-images.githubusercontent.com/25872019/230064374-47ba209e-562b-47b8-a2ce-d867e3afe204.png">

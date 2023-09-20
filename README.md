@@ -22,12 +22,12 @@ https://github.com/zanllp/sd-webui-infinite-image-browsing/assets/25872019/807b8
 - Also supports fuzzy search, you can search by a part of the filename or generated information.
 - Support adding custom search paths for easy management of folders created by the user.
 
-### 🖼️ View Image & `Send To`
+### 🖼️ View Images/Videos & `Send To`
 - Supports viewing image generation information. Also supported in full-screen preview mode.
 - Supports sending images to other tabs and third-party extensions such as ControlNet , openOutpaint.
 - Support full-screen preview and enable custom shortcut key operations while in full-screen preview mode.
 - Support navigating to the previous or next image in full-screen preview mode by pressing arrow keys or clicking buttons.
-
+- Support playing video files from a remote server.
 
 ### 💻 Multiple Usage Methods
 - You can install it as an extension on SD-webui. 
@@ -49,8 +49,8 @@ https://github.com/zanllp/sd-webui-infinite-image-browsing/assets/25872019/807b8
 - Provides a side-by-side comparison of two images.
 
 ### 🌐 Multilingual Support
-- Currently supports Simplified Chinese/English/German.
-- If you would like to add a new language, please refer to [i18n.ts](https://github.com/zanllp/sd-webui-infinite-image-browsing/blob/main/vue/src/i18n.ts) and submit the relevant code.
+- Currently supports Simplified Chinese/Traditional Chinese/English/German.
+- If you would like to add a new language, please refer to [i18n.ts](https://github.com/zanllp/sd-webui-infinite-image-browsing/blob/main/vue/src/i18n/zh-hans.ts) and submit the relevant code.
 
 ### 🔐 Privacy and Security
 - Supports custom secret key for authentication.
@@ -92,6 +92,7 @@ If you need a Dockerfile, you can refer to this link.  https://github.com/zanllp
 
 ## As a desktop application (without SD-webui and Python):
 Download and install the program from the `releases` section on the right-hand side of the repository page.
+If the antivirus detects a virus, it can be ignored as a false positive.
 # Preview
 
 <img width="1920" alt="image" src="https://user-images.githubusercontent.com/25872019/232167682-67f83b00-4391-4394-a7f6-6e4c9d11f252.png">

@@ -11,7 +11,10 @@ import fullScreenContextMenu from '@/page/fileTransfer/fullScreenContextMenu.vue
 import { LeftCircleOutlined, RightCircleOutlined } from '@/icon'
 import { message } from 'ant-design-vue'
 import { t } from '@/i18n'
-import { useImageSearch } from './hook'
+import { createImageSearchIter, useImageSearch } from './hook'
+
+const substr = ref('')
+const iter = createImageSearchIter(cursor => getImagesBySubstr(substr.value, cursor))
 const {
   queue,
   images,
@@ -34,10 +37,8 @@ const {
   onFileDragStart,
   onFileDragEnd,
   cellWidth,
-  onScroll,
-  updateImageTag
-} = useImageSearch()
-const substr = ref('')
+  onScroll
+} = useImageSearch(iter)
 
 const info = ref<DataBaseBasicInfo>()
 
@@ -57,9 +58,9 @@ const onUpdateBtnClick = makeAsyncFunctionSingle(
     }).res
 )
 const query = async () => {
-  images.value = await queue.pushAction(() => getImagesBySubstr(substr.value)).res
+  await iter.reset({ refetch: true })
   await nextTick()
-  updateImageTag()
+  onScroll()
   scroller.value!.scrollToItem(0)
   if (!images.value.length) {
     message.info(t('fuzzy-search-noResults'))
@@ -78,7 +79,7 @@ useGlobalEventListen('searchIndexExpired', () => info.value && (info.value.expir
   <div class="container" ref="stackViewEl">
     <div class="search-bar" v-if="info">
       <a-input v-model:value="substr" :placeholder="$t('fuzzy-search-placeholder')" :disabled="!queue.isIdle"
-        @keydown.enter="query" />
+        @keydown.enter="query" allow-clear />
       <AButton @click="onUpdateBtnClick" :loading="!queue.isIdle" type="primary" v-if="info.expired || !info.img_count">
         {{ info.img_count === 0 ? $t('generateIndexHint') : $t('UpdateIndex') }}</AButton>
       <AButton v-else type="primary" @click="query" :loading="!queue.isIdle" :disabled="!substr">{{

@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { FileOutlined, FolderOpenOutlined, EllipsisOutlined } from '@/icon'
+import { FileOutlined, FolderOpenOutlined, EllipsisOutlined, HeartOutlined, HeartFilled } from '@/icon'
 import { useGlobalStore } from '@/store/useGlobalStore'
-import { fallbackImage } from 'vue3-ts-util'
+import { fallbackImage, ok } from 'vue3-ts-util'
 import type { FileNodeInfo } from '@/api/files'
-import { isImageFile } from '@/util'
+import { isImageFile, isVideoFile } from '@/util'
 import { toImageThumbnailUrl, toRawFileUrl } from '@/util/file'
 import type { MenuInfo } from 'ant-design-vue/lib/menu/src/interface'
 import { computed } from 'vue'
 import ContextMenu from './ContextMenu.vue'
 import { useTagStore } from '@/store/useTagStore'
-import { CloseCircleOutlined } from '@/icon'
+import { CloseCircleOutlined, StarFilled, StarOutlined, PlayCircleFilled } from '@/icon'
+import { Tag } from '@/api/db'
+import { openVideoModal } from './functionalCallableComp'
 
 const global = useGlobalStore()
 const tagStore = useTagStore()
@@ -45,6 +47,20 @@ const imageSrc = computed(() => {
   const r = global.gridThumbnailResolution
   return global.enableThumbnail ? toImageThumbnailUrl(props.file, [r, r].join('x')) : toRawFileUrl(props.file)
 })
+
+const tags = computed(() => {
+  return (global.conf?.all_custom_tags ?? []).reduce((p, c) => {
+    return [...p, { ...c, selected: !!customTags.value.find((v) => v.id === c.id) }]
+  }, [] as (Tag & { selected: boolean })[])
+})
+
+const likeTag = computed(() => tags.value.find(v => v.type === 'custom' && v.name === 'like'))
+
+const taggleLikeTag = () => {
+  ok(likeTag.value)
+  emit('contextMenuClick', { key: `toggle-tag-${likeTag.value.id}` } as MenuInfo, props.file, props.idx)
+}
+
 </script>
 <template>
   <a-dropdown :trigger="['contextmenu']" :visible="!global.longPressOpenContextMenu ? undefined : typeof idx === 'number' && showMenuIdx === idx
@@ -59,23 +75,48 @@ const imageSrc = computed(() => {
         <div class="close-icon" v-if="enableCloseIcon" @click="emit('close-icon-click')">
           <close-circle-outlined />
         </div>
-        <a-dropdown v-if="enableRightClickMenu">
-          <div class="more">
-            <ellipsis-outlined />
-          </div>
-          <template #overlay>
-            <context-menu :file="file" :idx="idx" :selected-tag="customTags"
-              @context-menu-click="(e, f, i) => emit('contextMenuClick', e, f, i)" />
-          </template>
-        </a-dropdown>
+        <div class="more" v-if="enableRightClickMenu">
+          <a-dropdown>
+            <div class="float-btn-wrap">
+              <ellipsis-outlined />
+            </div>
+            <template #overlay>
+              <context-menu :file="file" :idx="idx" :selected-tag="customTags"
+                @context-menu-click="(e, f, i) => emit('contextMenuClick', e, f, i)" />
+            </template>
+          </a-dropdown>
+          <a-dropdown v-if="file.type === 'file'">
+            <div class="float-btn-wrap" :class="{ 'like-selected': likeTag?.selected }" @click="taggleLikeTag">
+              <HeartFilled v-if="likeTag?.selected" />
+              <HeartOutlined v-else />
+            </div>
+            <template #overlay>
+              <a-menu @click="emit('contextMenuClick', $event, file, idx)" v-if="tags.length > 1">
+                <a-menu-item v-for="tag in tags" :key="`toggle-tag-${tag.id}`">{{ tag.name }}
+                  <star-filled v-if="tag.selected" /><star-outlined v-else />
+                </a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+        </div>
         <!-- :key="fullScreenPreviewImageUrl ? undefined : file.fullpath" 
-          这么复杂是因为再全屏预览时可能因为直接删除导致fullpath变化，然后整个预览直接退出-->
-        <div style="position: relative;" :key="file.fullpath" :class="`idx-${idx}`" v-if="isImageFile(file.name)">
+          这么复杂是因为再全屏查看时可能因为直接删除导致fullpath变化，然后整个预览直接退出-->
+        <div :key="file.fullpath" :class="`idx-${idx} item-content`" v-if="isImageFile(file.name)">
 
           <a-image :src="imageSrc" :fallback="fallbackImage" :preview="{
             src: fullScreenPreviewImageUrl,
             onVisibleChange: (v: boolean, lv: boolean) => emit('previewVisibleChange', v, lv)
           }" />
+          <div class="tags-container" v-if="customTags && cellWidth > 128">
+            <a-tag v-for="tag in customTags" :key="tag.id" :color="tagStore.getColor(tag.name)">
+              {{ tag.name }}
+            </a-tag>
+          </div>
+        </div>
+        <div :class="`idx-${idx} item-content video`" v-else-if="isVideoFile(file.name)" @click="openVideoModal(file)">
+          <div class="play-icon">
+            <PlayCircleFilled />
+          </div>
           <div class="tags-container" v-if="customTags && cellWidth > 128">
             <a-tag v-for="tag in customTags" :key="tag.id" :color="tagStore.getColor(tag.name)">
               {{ tag.name }}
@@ -114,21 +155,44 @@ const imageSrc = computed(() => {
   align-items: center;
 }
 
-.tags-container {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  display: flex;
-  width: calc(100% - 16px);
-  flex-wrap: wrap-reverse;
-  flex-direction: row-reverse;
+.item-content {
+  position: relative;
 
-  &>* {
-    margin: 0 0 4px 4px;
-    font-size: 14px;
-    line-height: 1.6;
+  &.video {
+    background-color: var(--zp-border);
+    border-radius: 8px;
+    overflow: hidden;
+    width: v-bind('$props.cellWidth + "px"');
+    height: v-bind('$props.cellWidth + "px"');
+    cursor: pointer;
+  }
+
+  .play-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    font-size: 3em;
+    transform: translate(-50%, -50%);
+  }
+
+  .tags-container {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    display: flex;
+    width: calc(100% - 16px);
+    flex-wrap: wrap-reverse;
+    flex-direction: row-reverse;
+
+    &>* {
+      margin: 0 0 4px 4px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
   }
 }
+
+
 
 .close-icon {
   position: absolute;
@@ -163,17 +227,28 @@ const imageSrc = computed(() => {
     position: absolute;
     top: 4px;
     right: 4px;
-    cursor: pointer;
     z-index: 100;
-    font-size: 500;
-    font-size: 1.8em;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 4px;
-    border-radius: 100vh;
-    color: white;
-    background: var(--zp-icon-bg);
+    flex-direction: column;
+    line-height: 1em;
+
+    .float-btn-wrap {
+      font-size: 1.5em;
+      cursor: pointer;
+      font-size: 500;
+      padding: 4px;
+      border-radius: 100vh;
+      color: white;
+      background: var(--zp-icon-bg);
+
+      margin-bottom: 4px;
+
+      &.like-selected {
+        color: rgb(223, 5, 5);
+      }
+    }
   }
 
   &.grid {

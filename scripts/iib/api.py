@@ -39,6 +39,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import hashlib
 from scripts.iib.db.datamodel import (
     DataBase,
+    ExtraPathType,
     Image as DbImg,
     Tag,
     Floder,
@@ -49,7 +50,7 @@ from scripts.iib.db.datamodel import (
 from scripts.iib.db.update_image_data import update_image_data
 from scripts.iib.logger import logger
 from functional import seq
-
+import urllib.parse
 
 index_html_path = os.path.join(cwd, "vue/dist/index.html")  # 在app.py也被使用
 
@@ -143,7 +144,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
     update_all_scanned_paths()
 
     def update_extra_paths(conn: sqlite3.Connection):
-        r = ExtraPath.get_extra_paths(conn, "scanned")
+        r = ExtraPath.get_extra_paths(conn)
         mem["extra_paths"] = [x.path for x in r]
         update_all_scanned_paths()
 
@@ -151,7 +152,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         try:
             return os.path.commonpath(seq)
         except Exception as e:
-            logger.error(e)
+            # logger.error(e)
             return ""
 
     def is_path_under_parents(path, parent_paths: List[str] = []):
@@ -217,7 +218,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             conn = DataBase.get_conn()
             all_custom_tags = Tag.get_all_custom_tag(conn)
             extra_paths = ExtraPath.get_extra_paths(conn) + [
-                ExtraPath(path, "cli_access_only")
+                ExtraPath(path, ExtraPathType.cli_only)
                 for path in kwargs.get("extra_paths_cli", [])
             ]
             update_extra_paths(conn)
@@ -400,7 +401,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
                             }
                         )
         except Exception as e:
-            logger.error(e)
+            # logger.error(e)
             raise HTTPException(status_code=400, detail=str(e))
 
         return {"files": filter_allowed_files(files)}
@@ -452,7 +453,9 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         media_type, _ = mimetypes.guess_type(filename)
         headers = {}
         if disposition:
-            headers["Content-Disposition"] = f'attachment; filename="{disposition}"'
+            encoded_filename = urllib.parse.quote(disposition.encode('utf-8'))
+            headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{encoded_filename}"
+
         if is_path_under_parents(filename) and is_valid_image_path(
             filename
         ):  # 认为永远不变,不要协商缓存了试试
@@ -480,7 +483,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             if send_img_path["value"] == "":  # 等待setup里面生成完成
                 return True
             v = send_img_path["value"]
-            logger.info("gen_info_completed %s %s", _, v)
+            # is_dev and logger.info("gen_info_completed %s %s", _, v)
             await asyncio.sleep(0.1)
         return send_img_path["value"] == ""
 
@@ -598,14 +601,22 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         and_tags: List[int]
         or_tags: List[int]
         not_tags: List[int]
+        cursor: str
+        size: Optional[int] = 200
 
     @app.post(db_pre + "/match_images_by_tags", dependencies=[Depends(verify_secret)])
     async def match_image_by_tags(req: MatchImagesByTagsReq):
         conn = DataBase.get_conn()
-        imgs = ImageTag.get_images_by_tags(
-            conn, {"and": req.and_tags, "or": req.or_tags, "not": req.not_tags}
+        imgs, next_cursor = ImageTag.get_images_by_tags(
+            conn=conn,
+            tag_dict={"and": req.and_tags, "or": req.or_tags, "not": req.not_tags},
+            cursor=req.cursor,
+            limit=req.size
         )
-        return filter_allowed_files([x.to_file_info() for x in imgs])
+        return {
+            "files": filter_allowed_files([x.to_file_info() for x in imgs]),
+            "cursor": next_cursor
+        }
 
     @app.get(db_pre + "/img_selected_custom_tag", dependencies=[Depends(verify_secret)])
     async def get_img_selected_custom_tag(path: str):
@@ -711,47 +722,47 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         ImageTag.remove(conn, image_id=req.img_id, tag_id=req.tag_id)
 
     @app.get(db_pre + "/search_by_substr", dependencies=[Depends(verify_secret)])
-    async def search_by_substr(substr: str):
+    async def search_by_substr(substr: str, cursor: str = '', size = 200):
         conn = DataBase.get_conn()
-        imgs = DbImg.find_by_substring(conn=conn, substring=substr)
-        return filter_allowed_files([x.to_file_info() for x in imgs])
+        imgs, next_cursor = DbImg.find_by_substring(conn=conn, substring=substr, cursor=cursor, limit=size)
+        return {
+            "files": filter_allowed_files([x.to_file_info() for x in imgs]),
+            "cursor": next_cursor
+        }
 
-    class ScannedPathModel(BaseModel):
+
+    class ExtraPathModel(BaseModel):
         path: str
+        type: Optional[ExtraPathType]
 
     @app.post(
-        f"{db_pre}/scanned_paths",
-        status_code=201,
+        f"{db_pre}/extra_paths",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
-    async def create_scanned_path(scanned_path: ScannedPathModel):
+    async def create_extra_path(extra_path: ExtraPathModel):
         if enable_access_control:
-            if not is_path_under_parents(scanned_path.path):
+            if not is_path_under_parents(extra_path.path):
                 raise HTTPException(status_code=403)
         conn = DataBase.get_conn()
-        path = ExtraPath(scanned_path.path)
+        path = ExtraPath(extra_path.path, extra_path.type)
         try:
             path.save(conn)
         finally:
             conn.commit()
 
     @app.get(
-        f"{db_pre}/scanned_paths",
-        response_model=List[ScannedPathModel],
+        f"{db_pre}/extra_paths",
         dependencies=[Depends(verify_secret)],
     )
-    async def read_scanned_paths():
+    async def read_extra_paths():
         conn = DataBase.get_conn()
-        paths = ExtraPath.get_extra_paths(conn, "scanned")
-        return [{"path": path.path} for path in paths]
+        return ExtraPath.get_extra_paths(conn)
 
     @app.delete(
-        f"{db_pre}/scanned_paths",
+        f"{db_pre}/extra_paths",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
-    async def delete_scanned_path(scanned_path: ScannedPathModel):
-        path = to_abs_path(scanned_path.path)
-        if path in get_img_search_dirs():
-            raise HTTPException(400)
+    async def delete_extra_path(extra_path: ExtraPathModel):
+        path = to_abs_path(extra_path.path)
         conn = DataBase.get_conn()
-        ExtraPath.remove(conn, path)
+        ExtraPath.remove(conn, path, extra_path.type, img_search_dirs=get_img_search_dirs())

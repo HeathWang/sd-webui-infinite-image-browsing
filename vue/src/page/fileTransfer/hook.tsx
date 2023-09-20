@@ -25,14 +25,14 @@ import * as Path from '@/util/path'
 import type Progress from 'nprogress'
 // @ts-ignore
 import NProgress from 'multi-nprogress'
-import { Button, Checkbox, Modal, message, notification } from 'ant-design-vue'
+import { Button, Checkbox, Modal, message } from 'ant-design-vue'
 import type { MenuInfo } from 'ant-design-vue/lib/menu/src/interface'
 import { t } from '@/i18n'
 import { DatabaseOutlined } from '@/icon'
-import { addScannedPath, removeScannedPath, toggleCustomTagToImg } from '@/api/db'
-import { FileTransferData, getFileTransferDataFromDragEvent, toRawFileUrl } from '../../util/file'
+import { addExtraPath, removeExtraPath, toggleCustomTagToImg } from '@/api/db'
+import { FileTransferData, downloadFiles, getFileTransferDataFromDragEvent, isMediaFile, toRawFileUrl } from '@/util/file'
 import { getShortcutStrFromEvent } from '@/util/shortcut'
-import { openCreateFlodersModal, MultiSelectTips } from './functionalCallableComp'
+import { openCreateFlodersModal, MultiSelectTips } from '@/components/functionalCallableComp'
 import { useTagStore } from '@/store/useTagStore'
 import { useBatchDownloadStore } from '@/store/useBatchDownloadStore'
 import { Walker } from './walker'
@@ -87,7 +87,7 @@ export const { useHookShareState } = createTypedShareStateHook(
       const method = sortMethod.value
       const filter = (files: FileNodeInfo[]) =>
         global.onlyFoldersAndImages
-          ? files.filter((file) => file.type === 'dir' || isImageFile(file.name))
+          ? files.filter((file) => file.type === 'dir' || isMediaFile(file.name))
           : files
       return sortFiles(filter(files), method).filter(v => !deletedFiles.has(v.fullpath))
     })
@@ -149,7 +149,7 @@ export interface Page {
   curr: string
 }
 /**
- * 全屏预览
+ * 全屏查看
  * @param props
  * @returns
  */
@@ -178,7 +178,7 @@ export function usePreview () {
     if (props.value.walkModePath) {
       if (!canPreview('next') && canLoadNext) {
         message.info(t('loadingNextFolder'))
-        eventEmitter.value.emit('loadNextDir', true) // 如果在全屏预览时外面scroller可能还停留在很久之前，使用全屏预览的索引
+        eventEmitter.value.emit('loadNextDir', true) // 如果在全屏查看时外面scroller可能还停留在很久之前，使用全屏查看的索引
       }
     }
   }
@@ -501,10 +501,10 @@ export function useLocation () {
       if (!path.can_delete) {
         return
       }
-      await removeScannedPath(currLocation.value)
+      await removeExtraPath({ path: currLocation.value, type: 'scanned' })
       message.success(t('removeCompleted'))
     } else {
-      await addScannedPath(currLocation.value)
+      await addExtraPath({ path: currLocation.value, type: 'scanned' })
       message.success(t('addCompleted'))
     }
     globalEvents.emit('searchIndexExpired')
@@ -523,8 +523,10 @@ export function useLocation () {
     isLocationEditing.value = false
   }
 
-  useWatchDocument('click', () => {
-    isLocationEditing.value = false
+  useWatchDocument('click', (e) => {
+    if (!(e.target as HTMLElement)?.className?.includes?.('ant-input')) {
+      isLocationEditing.value = false
+    }
   })
 
   const share = () => {
@@ -589,7 +591,7 @@ export function useLocation () {
   }
 }
 
-export function useFilesDisplay () {
+export function useFilesDisplay ({ fetchNext }: {fetchNext?: () => Promise<any>} = {  }) {
   const {
     scroller,
     sortedFiles,
@@ -633,23 +635,34 @@ export function useFilesDisplay () {
     }
   }
 
-  const fill = async (isFullScreenPreview = false) => {
-    const s = scroller.value
     // 填充够一页，直到不行为止
+  const fetchDataUntilViewFilled = async (isFullScreenPreview = false) => {
+    const s = scroller.value
     const currIdx = () => (isFullScreenPreview ? previewIdx.value : s?.$_endIndex ?? 0)
-    while (
-      !sortedFiles.value.length ||
-      (currIdx() > sortedFiles.value.length - 20 && canLoadNext.value)
-    ) {
+    const needLoad = () => {
+      const len = sortedFiles.value.length
+      const preload = 50
+      if (!len) {
+        return true
+      }
+      if (fetchNext) {
+        return currIdx() > len - preload
+      }
+      return currIdx() > len - preload && canLoadNext.value // canLoadNext 是walker的，表示加载完成
+    }
+    while (needLoad()) {
       await delay(30)
-      await loadNextDir()
+      const ret = await (fetchNext ?? loadNextDir)()
+      if (typeof ret === 'boolean' && !ret) {
+        return // 返回false同样表示加载完成
+      }
     }
   }
 
-  state.useEventListen('loadNextDir', fill)
+  state.useEventListen('loadNextDir', fetchDataUntilViewFilled)
 
 
-  const onViewedImagesChange = () => {
+  const updateViewingImagesTag = () => {
     const s = scroller.value
     if (s) {
       const paths = sortedFiles.value.slice(Math.max(s.$_startIndex - 10, 0), s.$_endIndex + 10)
@@ -659,12 +672,12 @@ export function useFilesDisplay () {
     }
   }
 
-  watch(currLocation, debounce(onViewedImagesChange, 150))
+  watch(currLocation, debounce(updateViewingImagesTag, 150))
 
-  const onScroll = debounce(() => {
-    fill()
-    onViewedImagesChange()
-  }, 300)
+  const onScroll = debounce(async () => {
+    await fetchDataUntilViewFilled()
+    updateViewingImagesTag()
+  }, 150)
 
   return {
     gridItems,
@@ -678,8 +691,7 @@ export function useFilesDisplay () {
     loadNextDirLoading,
     canLoadNext,
     itemSize,
-    cellWidth,
-    onViewedImagesChange
+    cellWidth
   }
 }
 
@@ -872,13 +884,8 @@ export function useFileItemActions (
         spinning.value = true
         await setImgPath(file.fullpath) // 设置图像路径
         imgTransferBus.postMessage({ ...preset, event: 'click_hidden_button', btnEleId: 'iib_hidden_img_update_trigger' }) // 触发图像组件更新
-        const warnId = setTimeout(
-          () => notification.warn({ message: t('long_loading'), duration: 20 }),
-          5000
-        )
         // ok(await genInfoCompleted(), 'genInfoCompleted timeout') // 等待消息生成完成
         await genInfoCompleted() // 等待消息生成完成
-        clearTimeout(warnId)
         imgTransferBus.postMessage({ ...preset, event: 'click_hidden_button', btnEleId: `iib_hidden_tab_${tab}` }) // 触发粘贴
       } catch (error) {
         console.error(error)
@@ -898,8 +905,11 @@ export function useFileItemActions (
     switch (e.key) {
       case 'previewInNewWindow':
         return window.open(url)
-      case 'download':
-        return window.open(toRawFileUrl(file, true))
+      case 'download':{
+        const selectedFiles = getSelectedImg()
+        downloadFiles(selectedFiles.map(file => toRawFileUrl(file, true)))
+        break
+      }
       case 'copyPreviewUrl': {
         return copy2clipboardI18n(parent.document.location.origin + url)
       }
@@ -1065,6 +1075,9 @@ export function useFileItemActions (
               return message.warn(t('fullscreenRestriction'))
             }
             return onContextMenuClick({ key: 'deleteFiles' } as MenuInfo, file, idx)
+          }
+          case 'download': {
+            return onContextMenuClick({ key: 'download' } as MenuInfo, file, idx)
           }
           default: {
             const name = /^toggle_tag_(.*)$/.exec(action)?.[1]
