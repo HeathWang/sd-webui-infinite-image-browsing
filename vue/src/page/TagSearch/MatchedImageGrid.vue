@@ -103,10 +103,11 @@ watch(
             :selected="multiSelectedIdxs.includes(idx)"
             @context-menu-click="onContextMenuClickU"
             @preview-visible-change="onPreviewVisibleChange"
+            :is-selected-mutil-files="multiSelectedIdxs.length > 1"
           />
         </template>
       </RecycleScroller>
-      <div v-else-if="iter.load && selectedTagIds.and_tags.length === 1">
+      <div v-else-if="iter.load && selectedTagIds.and_tags.length === 1 && !selectedTagIds.folder_paths_str?.trim()">
         <div class="no-res-hint">
           <p class="hint">{{ $t('tagSearchNoResultsMessage') }}</p>
           <AButton @click="openRebuildImageIndexModal()" type="primary">{{ $t('rebuildImageIndex') }}</AButton>

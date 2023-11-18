@@ -36,11 +36,13 @@ export interface MatchImageByTagsReq {
   and_tags: number[]
   or_tags: number[]
   not_tags: number[]
+  folder_paths_str?: string
 }
 
 export const getImagesByTags = async (req: MatchImageByTagsReq, cursor: string) => {
   const resp = await axiosInst.value.post('/db/match_images_by_tags', {
     ...req,
+    folder_paths: (req.folder_paths_str ?? '').split(/,|\n/).map(v => v.trim()).filter(v => v),
     cursor
   })
   return resp.data as {
@@ -106,3 +108,13 @@ export const batchGetTagsByPath = async (paths: string[]) => {
 }
 
 export const rebuildImageIndex = () => axiosInst.value.post('/db/rebuild_index')
+
+export interface BatchUpdateTagParams {
+  img_paths: string[]
+  action: 'add' | 'remove'
+  tag_id: number
+}
+
+export const batchUpdateImageTag = (data: BatchUpdateTagParams) => {
+  return axiosInst.value.post('/db/batch_update_image_tag', data)
+}

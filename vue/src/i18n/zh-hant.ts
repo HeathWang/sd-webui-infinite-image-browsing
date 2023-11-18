@@ -1,6 +1,10 @@
 import type { IIBI18nMap } from '.'
 
 export const zhHant: IIBI18nMap = {
+  searchScope: '搜尋範圍',
+  specifiedSearchFolder: '指定搜尋的資料夾，使用逗號或換行分割多個',
+  batchAddTag: '批量添加Tag',
+  batchRemoveTag: '批量移除Tag',
   errorOccurred: '發生了個錯誤',
   useThumbnailPreview: '使用縮圖預覽',
   gridThumbnailWidth: '網格縮圖寬度',
@@ -199,5 +203,5 @@ export const zhHant: IIBI18nMap = {
   confirmRebuildImageIndex: '確認重建圖像索引？',
   rebuildImageIndex: '重新構建圖像索引',
   rebuildComplete: '重新構建完成',
-  tagSearchNoResultsMessage: "看起來沒有匹配到任何結果，嘗試通過重新構建索引來去除無用的標籤？"
+  tagSearchNoResultsMessage: '看起來沒有匹配到任何結果，嘗試通過重新構建索引來去除無用的標籤？'
 }

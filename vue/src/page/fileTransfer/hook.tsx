@@ -1,4 +1,4 @@
-import { useGlobalStore, type FileTransferTabPane, type Shortcut } from '@/store/useGlobalStore'
+import { useGlobalStore, type FileTransferTabPane, type Shortcut, type TagSearchTabPane  } from '@/store/useGlobalStore'
 import { useImgSliStore } from '@/store/useImgSli'
 import { onLongPress, useElementSize, useMouseInElement } from '@vueuse/core'
 import { ref, computed, watch, onMounted, h, reactive } from 'vue'
@@ -29,7 +29,7 @@ import { Button, Checkbox, Modal, message } from 'ant-design-vue'
 import type { MenuInfo } from 'ant-design-vue/lib/menu/src/interface'
 import { t } from '@/i18n'
 import { DatabaseOutlined } from '@/icon'
-import { addExtraPath, removeExtraPath, toggleCustomTagToImg } from '@/api/db'
+import { addExtraPath, batchUpdateImageTag, removeExtraPath, toggleCustomTagToImg } from '@/api/db'
 import { FileTransferData, downloadFiles, getFileTransferDataFromDragEvent, isMediaFile, toRawFileUrl } from '@/util/file'
 import { getShortcutStrFromEvent } from '@/util/shortcut'
 import { openCreateFlodersModal, MultiSelectTips } from '@/components/functionalCallableComp'
@@ -541,6 +541,19 @@ export function useLocation () {
     const url = `${baseUrl}?${params.toString()}`
     copy2clipboardI18n(url, t('copyLocationUrlSuccessMsg'))
   }
+
+  const searchInCurrentDir = () => {
+    const tab = global.tabList[props.value.tabIdx]
+    const pane: TagSearchTabPane  = {
+      type: 'tag-search',
+      key: uniqueId(),
+      searchScope: currLocation.value,
+      name: t('imgSearch'),
+    }
+    tab.panes.push(pane)
+    tab.key = pane.key
+  }
+
   const selectAll = () => eventEmitter.value.emit('selectAll')
 
   const onCreateFloderBtnClick = async () => {
@@ -587,7 +600,8 @@ export function useLocation () {
     quickMoveTo,
     onCreateFloderBtnClick,
     onWalkBtnClick,
-    showWalkButton
+    showWalkButton,
+    searchInCurrentDir
   }
 }
 
@@ -894,13 +908,27 @@ export function useFileItemActions (
         spinning.value = false
       }
     }
-    if (`${e.key}`.startsWith('toggle-tag-')) {
-      const tagId = +`${e.key}`.split('toggle-tag-')[1]
+    const key = `${e.key}`
+    
+    if (key.startsWith('toggle-tag-')) {
+      const tagId = +key.split('toggle-tag-')[1]
       const { is_remove } = await toggleCustomTagToImg({ tag_id: tagId, img_path: file.fullpath })
       const tag = global.conf?.all_custom_tags.find((v) => v.id === tagId)?.name!
-      tagStore.refreshTags([file.fullpath])
+      await tagStore.refreshTags([file.fullpath])
       message.success(t(is_remove ? 'removedTagFromImage' : 'addedTagToImage', { tag }))
       return
+    } else if (key.startsWith('batch-add-tag-') || key.startsWith('batch-remove-tag-')) {
+      const tagId = +key.split('-tag-')[1]
+      const action = key.includes('add') ? 'add' : 'remove'
+      const paths = getSelectedImg().map(v => v.fullpath)
+      await batchUpdateImageTag({
+        tag_id: tagId,
+        img_paths: paths,
+        action
+      })
+      await tagStore.refreshTags(paths)
+      message.success(t(action === 'add' ? 'addCompleted' : 'removeCompleted'))
+      return 
     }
     switch (e.key) {
       case 'previewInNewWindow':
