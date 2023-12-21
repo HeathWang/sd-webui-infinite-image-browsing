@@ -1056,10 +1056,10 @@ export function useFileItemActions (
             message.success(t('deleteSuccess'))
             events.emit('removeFiles', { paths: paths, loc: currLocation.value })
         }
-        if (selectedFiles.length === 1 && global.ignoredConfirmActions.deleteOneOnly) {
+        if (selectedFiles.length === 1) {
           return removeFile()
         }
-        await new Promise<void>((resolve) => {
+        /*await new Promise<void>((resolve) => {
           Modal.confirm({
             title: t('confirmDelete'),
             maskClosable: true,
@@ -1077,7 +1077,7 @@ export function useFileItemActions (
               resolve()
             }
           })
-        })
+        })*/
         break
       }
     }
