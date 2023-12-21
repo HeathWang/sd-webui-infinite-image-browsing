@@ -174,7 +174,7 @@ export const useGlobalStore = defineStore(
       return Object.fromEntries(res)
     })
 
-    const ignoredConfirmActions = reactive<Record<ActionConfirmRequired, boolean>>({ deleteOneOnly: false })
+    const ignoredConfirmActions = reactive<Record<ActionConfirmRequired, boolean>>({ deleteOneOnly: true })
 
     return {
       defaultSortingMethod,

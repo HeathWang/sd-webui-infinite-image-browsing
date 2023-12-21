@@ -125,7 +125,7 @@ const restoreRecord = () => {
         <LockOutlined></LockOutlined>
       </template>
     </a-alert>
-    <a-alert show-icon v-if="!global.dontShowAgainNewImgOpts">
+<!--    <a-alert show-icon v-if="!global.dontShowAgainNewImgOpts">
       <template #message>
         <div class="access-mode-message">
           <div>
@@ -135,7 +135,7 @@ const restoreRecord = () => {
           <a @click.prevent="global.dontShowAgainNewImgOpts = true">{{ $t('dontShowAgain') }}</a>
         </div>
       </template>
-    </a-alert>
+    </a-alert>-->
     <div class="content">
       <div class="feature-item">
         <h2>{{ $t('walkMode') }}</h2>
