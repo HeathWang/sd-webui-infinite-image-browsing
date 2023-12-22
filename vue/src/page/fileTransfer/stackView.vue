@@ -22,7 +22,7 @@ import { watch } from 'vue'
 import FileItem from '@/components/FileItem.vue'
 import fullScreenContextMenu from './fullScreenContextMenu.vue'
 import { copy2clipboardI18n } from '@/util'
-import { openFolder } from '@/api'
+// import { openFolder } from '@/api'
 import { sortMethods } from './fileSort'
 import { isTauri } from '@/util/env'
 
@@ -47,7 +47,7 @@ const {
   multiSelectedIdxs,
   spinning
 } = useHookShareState().toRefs()
-const { currLocation, currPage, refresh, copyLocation, back, openNext, stack, quickMoveTo,
+const { currPage, refresh, copyLocation, back, openNext, stack, quickMoveTo,
   addToSearchScanPathAndQuickMove, searchPathInfo, locInputValue, isLocationEditing,
   onLocEditEnter, onEditBtnClick, share, selectAll, onCreateFloderBtnClick, onWalkBtnClick,
   showWalkButton, searchInCurrentDir
@@ -196,9 +196,9 @@ watch(
                     <a @click.prevent="addToSearchScanPathAndQuickMove" v-else-if="searchPathInfo.can_delete">{{
                       $t('removeFromSearchScanPathAndQuickMove') }}</a>
                   </div>
-                  <div style="padding: 4px;">
-                    <a @click.prevent="openFolder(currLocation + '/')">{{ $t('openWithLocalFileBrowser') }}</a>
-                  </div>
+<!--                  <div style="padding: 4px;">-->
+<!--                    <a @click.prevent="openFolder(currLocation + '/')">{{ $t('openWithLocalFileBrowser') }}</a>-->
+<!--                  </div>-->
                   <div style="padding: 4px;">
                     <a @click.prevent="onCreateFloderBtnClick">{{ $t('createFolder') }}</a>
                   </div>

@@ -25,7 +25,7 @@ import * as Path from '@/util/path'
 import type Progress from 'nprogress'
 // @ts-ignore
 import NProgress from 'multi-nprogress'
-import { Button, Checkbox, Modal, message } from 'ant-design-vue'
+import { Button, Modal, message } from 'ant-design-vue'
 import type { MenuInfo } from 'ant-design-vue/lib/menu/src/interface'
 import { t } from '@/i18n'
 import { DatabaseOutlined } from '@/icon'

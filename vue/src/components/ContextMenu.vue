@@ -3,7 +3,7 @@ import type { Tag } from '@/api/db'
 import type { FileNodeInfo } from '@/api/files'
 import type { MenuInfo } from 'ant-design-vue/lib/menu/src/interface'
 import { isImageFile } from '@/util'
-import { StarFilled, StarOutlined } from '@/icon'
+// import { StarFilled, StarOutlined } from '@/icon'
 import { useGlobalStore } from '@/store/useGlobalStore'
 import { computed } from 'vue'
 const global = useGlobalStore()
@@ -47,8 +47,8 @@ const tags = computed(() => {
             <a-menu-item key="send2outpaint">openOutpaint</a-menu-item>
           </a-sub-menu>
         </template>
-        <a-menu-item key="send2BatchDownload">{{ $t('sendToBatchDownload') }}</a-menu-item>
-        <a-menu-item key="send2savedDir">{{ $t('send2savedDir') }}</a-menu-item>
+<!--        <a-menu-item key="send2BatchDownload">{{ $t('sendToBatchDownload') }}</a-menu-item>-->
+<!--        <a-menu-item key="send2savedDir">{{ $t('send2savedDir') }}</a-menu-item>-->
         <a-menu-divider />
         <template v-if="isSelectedMutilFiles">
           <a-sub-menu key="batch-add-tag" :title="$t('batchAddTag')">
@@ -60,12 +60,12 @@ const tags = computed(() => {
             </a-menu-item>
           </a-sub-menu>
         </template>
-        <a-sub-menu v-else key="toggle-tag" :title="$t('toggleTag')">
-          <a-menu-item v-for="tag in tags" :key="`toggle-tag-${tag.id}`">{{ tag.name }} <star-filled
-              v-if="tag.selected" /><star-outlined v-else />
-          </a-menu-item>
-        </a-sub-menu>
-        <a-menu-item key="openWithLocalFileBrowser">{{ $t('openWithLocalFileBrowser') }}</a-menu-item>
+<!--        <a-sub-menu v-else key="toggle-tag" :title="$t('toggleTag')">-->
+<!--          <a-menu-item v-for="tag in tags" :key="`toggle-tag-${tag.id}`">{{ tag.name }} <star-filled-->
+<!--              v-if="tag.selected" /><star-outlined v-else />-->
+<!--          </a-menu-item>-->
+<!--        </a-sub-menu>-->
+<!--        <a-menu-item key="openWithLocalFileBrowser">{{ $t('openWithLocalFileBrowser') }}</a-menu-item>-->
       </template>
       <a-menu-item key="previewInNewWindow">{{ $t('previewInNewWindow') }}</a-menu-item>
       <a-menu-item key="download">{{ $t('download') }}</a-menu-item>
