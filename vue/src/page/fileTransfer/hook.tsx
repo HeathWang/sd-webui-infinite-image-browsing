@@ -25,7 +25,7 @@ import * as Path from '@/util/path'
 import type Progress from 'nprogress'
 // @ts-ignore
 import NProgress from 'multi-nprogress'
-import { Button, Modal, message } from 'ant-design-vue'
+import { Button, Checkbox, Modal, message } from 'ant-design-vue'
 import type { MenuInfo } from 'ant-design-vue/lib/menu/src/interface'
 import { t } from '@/i18n'
 import { DatabaseOutlined } from '@/icon'
@@ -1059,7 +1059,7 @@ export function useFileItemActions (
         if (selectedFiles.length === 1) {
           return removeFile()
         }
-        /*await new Promise<void>((resolve) => {
+        await new Promise<void>((resolve) => {
           Modal.confirm({
             title: t('confirmDelete'),
             maskClosable: true,
@@ -1077,7 +1077,7 @@ export function useFileItemActions (
               resolve()
             }
           })
-        })*/
+        })
         break
       }
     }
