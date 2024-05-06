@@ -13,8 +13,8 @@ Promise.resolve().then(async () => {
     <link rel="icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Infinite Image Browsing</title>
-    <script type="module" crossorigin src="/infinite_image_browsing/fe-static/assets/index-764011e3.js"></script>
-    <link rel="stylesheet" href="/infinite_image_browsing/fe-static/assets/index-b2a6efac.css">
+    <script type="module" crossorigin src="/infinite_image_browsing/fe-static/assets/index-3a8855dc.js"></script>
+    <link rel="stylesheet" href="/infinite_image_browsing/fe-static/assets/index-d284a60a.css">
   </head>
 
   <body>
@@ -44,7 +44,7 @@ Promise.resolve().then(async () => {
     }
     return target
   }
-
+  
   const getTabIdxById = (id) => {
     const tabList = gradioApp().querySelectorAll('#tabs > .tabitem[id^=tab_]')
     return Array.from(tabList).findIndex((v) => v.id.includes(id))
