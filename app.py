@@ -1,10 +1,16 @@
+import codecs
 from typing import List
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.responses import FileResponse
 import uvicorn
 import os
-from scripts.iib.api import infinite_image_browsing_api, index_html_path
-from scripts.iib.tool import get_sd_webui_conf, get_valid_img_dirs, sd_img_dirs, normalize_paths
+from scripts.iib.api import infinite_image_browsing_api, index_html_path, DEFAULT_BASE
+from scripts.iib.tool import (
+    get_sd_webui_conf,
+    get_valid_img_dirs,
+    sd_img_dirs,
+    normalize_paths,
+)
 from scripts.iib.db.datamodel import DataBase, Image
 from scripts.iib.db.update_image_data import update_image_data
 import argparse
@@ -19,7 +25,7 @@ default_host = "127.0.0.1"
 
 def sd_webui_paths_check(sd_webui_config: str, relative_to_config: bool):
     conf = {}
-    with open(sd_webui_config, "r") as f:
+    with codecs.open(sd_webui_config, "r", "utf-8") as f:
         conf = json.loads(f.read())
     if relative_to_config:
         for dir in sd_img_dirs:
@@ -38,7 +44,7 @@ def paths_check(paths):
         if os.path.isabs(path):
             abs_path = path
         else:
-            abs_path = os.path.join(os.getcwd(), path)
+            abs_path = os.path.normpath(os.path.join(os.getcwd(), path))
         if not os.path.exists(abs_path):
             print(f"{tag} The path '{abs_path}' will be ignored (value: {path}).")
 
@@ -69,6 +75,8 @@ class AppUtils:
         allow_cors=False,
         enable_shutdown=False,
         sd_webui_dir: Optional[str] = None,
+        base: Optional[str]=None,
+        export_fe_fn=False,
     ):
         """
         Parameter definitions can be found by running the `python app.py -h `command or by examining the setup_parser() function.
@@ -80,6 +88,10 @@ class AppUtils:
         self.allow_cors = allow_cors
         self.enable_shutdown = enable_shutdown
         self.sd_webui_dir = sd_webui_dir
+        if base and not base.startswith('/'):
+            base = '/' + base
+        self.base = base
+        self.export_fe_fn = export_fe_fn
         if sd_webui_dir:
             DataBase.path = os.path.join(
                 sd_webui_dir, "extensions/sd-webui-infinite-image-browsing/iib.db"
@@ -92,7 +104,9 @@ class AppUtils:
         self.__init__(*args, **kwargs)
 
     @staticmethod
-    def async_run(app: FastAPI, port: int = default_port, host = default_host) -> Coroutine:
+    def async_run(
+        app: FastAPI, port: int = default_port, host=default_host
+    ) -> Coroutine:
         """
         用于从异步运行的 FastAPI，在 Jupyter Notebook 环境中非常有用
         """
@@ -126,6 +140,8 @@ class AppUtils:
             allow_cors=self.allow_cors,
             enable_shutdown=self.enable_shutdown,
             launch_mode="server",
+            base= self.base,
+            export_fe_fn=self.export_fe_fn,
         )
 
     def get_root_browser_app(self) -> FastAPI:
@@ -137,6 +153,10 @@ class AppUtils:
         # 用于在首页显示
         @app.get("/")
         def index():
+            if isinstance(self.base, str):
+                with open(index_html_path, "r", encoding="utf-8") as file:
+                    content = file.read().replace(DEFAULT_BASE, self.base)
+                    return Response(content=content, media_type="text/html")
             return FileResponse(index_html_path)
 
         self.wrap_app(app)
@@ -186,10 +206,19 @@ def setup_parser() -> argparse.ArgumentParser:
         default=None,
         help="The path to the sd_webui folder. When specified, the sd_webui's configuration will be used and the extension must be installed within the sd_webui. Data will be shared between the two.",
     )
+    parser.add_argument(
+        "--export_fe_fn",
+        default=True,
+        action="store_true",
+        help="Export front-end functions to enable external access through iframe.",
+    )
+    parser.add_argument("--base", type=str, help="The base URL for the IIB Api.")
     return parser
 
 
-def launch_app(port: int = default_port, host: str = default_host, *args, **kwargs: dict) -> None:
+def launch_app(
+    port: int = default_port, host: str = default_host, *args, **kwargs: dict
+) -> None:
     """
     Launches the application on the specified port.
 
@@ -202,7 +231,9 @@ def launch_app(port: int = default_port, host: str = default_host, *args, **kwar
     uvicorn.run(app, host=host, port=port)
 
 
-async def async_launch_app(port: int = default_port, host: str = default_host, *args, **kwargs: dict) -> None:
+async def async_launch_app(
+    port: int = default_port, host: str = default_host, *args, **kwargs: dict
+) -> None:
     """
     Asynchronously launches the application on the specified port.
 

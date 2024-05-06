@@ -1,16 +1,14 @@
 from datetime import datetime, timedelta
 import os
+from pathlib import Path
 import shutil
 import sqlite3
+
 from scripts.iib.tool import (
-    comfyui_exif_data_to_str,
-    get_comfyui_exif_data,
+    get_video_type,
     human_readable_size,
-    is_img_created_by_comfyui,
-    is_img_created_by_comfyui_with_webui_gen_info,
-    is_valid_image_path,
+    is_valid_media_path,
     temp_path,
-    read_sd_webui_gen_info_from_image,
     get_formatted_date,
     is_win,
     cwd,
@@ -25,14 +23,17 @@ from scripts.iib.tool import (
     create_zip_file,
     normalize_paths,
     to_abs_path,
-    is_secret_key_required
+    is_secret_key_required,
+    open_file_with_default_app,
+    is_nuitka,
+    backup_db_file
 )
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Response
 from fastapi.staticfiles import StaticFiles
 import asyncio
 from typing import List, Optional
 from pydantic import BaseModel
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from PIL import Image
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,8 +51,10 @@ from scripts.iib.db.datamodel import (
 )
 from scripts.iib.db.update_image_data import update_image_data, rebuild_image_index
 from scripts.iib.logger import logger
-from functional import seq
+from scripts.iib.seq import seq
 import urllib.parse
+from scripts.iib.fastapi_video import range_requests_response
+from scripts.iib.parsers.index import parse_image_info
 
 index_html_path = os.path.join(cwd, "vue/dist/index.html")  # 在app.py也被使用
 
@@ -67,6 +70,7 @@ WRITEABLE_PERMISSIONS = ["read-write", "write-only"]
 is_api_writeable = not (os.getenv("IIB_ACCESS_CONTROL_PERMISSION")) or (
     os.getenv("IIB_ACCESS_CONTROL_PERMISSION") in WRITEABLE_PERMISSIONS
 )
+IIB_DEBUG=False
 
 
 async def write_permission_required():
@@ -81,7 +85,7 @@ async def write_permission_required():
 async def verify_secret(request: Request):
     if not secret_key:
         if is_secret_key_required:
-            raise HTTPException(status_code=400, detail={ "type": "secret_key_required" })
+            raise HTTPException(status_code=400, detail={"type": "secret_key_required"})
         return
     token = request.cookies.get("IIB_S")
     if not token:
@@ -93,10 +97,48 @@ async def verify_secret(request: Request):
     if mem["secret_key_hash"] != token:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-
+DEFAULT_BASE = "/infinite_image_browsing"
 def infinite_image_browsing_api(app: FastAPI, **kwargs):
-    pre = "/infinite_image_browsing"
+    backup_db_file(DataBase.get_db_file_path())
+    api_base = kwargs.get("base") if isinstance(kwargs.get("base"), str) else DEFAULT_BASE
+    fe_public_path = kwargs.get("fe_public_path") if isinstance(kwargs.get("fe_public_path"), str) else api_base
+    # print(f"IIB api_base:{api_base} fe_public_path:{fe_public_path}")
+    if IIB_DEBUG or is_nuitka:
+        @app.exception_handler(Exception)
+        async def exception_handler(request: Request, exc: Exception):
+            error_msg = f"An exception occurred while processing {request.method} {request.url}: {exc}"
+            logger.error(error_msg)
 
+            return JSONResponse(
+                status_code=500, content={"message": "Internal Server Error"}
+            )
+        @app.middleware("http")
+        async def log_requests(request: Request, call_next):
+            path = request.url.path
+            if (
+                path.find("infinite_image_browsing/image-thumbnail") == -1
+                and path.find("infinite_image_browsing/file") == -1
+                and path.find("infinite_image_browsing/fe-static") == -1
+            ):
+                logger.info(f"Received request: {request.method} {request.url}")
+                if request.query_params:
+                    logger.debug(f"Query Params: {request.query_params}")
+                if request.path_params:
+                    logger.debug(f"Path Params: {request.path_params}")
+
+            try:
+                return await call_next(request)
+            except HTTPException as http_exc:
+                logger.warning(
+                    f"HTTPException occurred while processing {request.method} {request.url}: {http_exc}"
+                )
+                raise http_exc
+            except Exception as exc:
+                logger.error(
+                    f"An exception occurred while processing {request.method} {request.url}: {exc}"
+                )
+
+    
     if kwargs.get("allow_cors"):
         app.add_middleware(
             CORSMiddleware,
@@ -109,7 +151,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         try:
             return get_valid_img_dirs(get_sd_webui_conf(**kwargs))
         except Exception as e:
-            print(e) 
+            print(e)
             return []
 
     def update_all_scanned_paths():
@@ -138,7 +180,9 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             )
         else:
             paths = (
-                get_img_search_dirs() + mem["extra_paths"] + kwargs.get("extra_paths_cli", [])
+                get_img_search_dirs()
+                + mem["extra_paths"]
+                + kwargs.get("extra_paths_cli", [])
             )
         mem["all_scanned_paths"] = unique_by(paths)
 
@@ -198,19 +242,13 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
     def filter_allowed_files(files: List[FileInfoDict]):
         return [x for x in files if is_path_trusted(x["fullpath"])]
 
-    static_dir = f"{cwd}/vue/dist"
-    if os.path.exists(static_dir):
-        app.mount(
-            f"{pre}/fe-static",
-            StaticFiles(directory=static_dir),
-            name="infinite_image_browsing-fe-static",
-        )
 
-    @app.get(f"{pre}/hello")
+
+    @app.get(f"{api_base}/hello")
     async def greeting():
         return "hello"
 
-    @app.get(f"{pre}/global_setting", dependencies=[Depends(verify_secret)])
+    @app.get(f"{api_base}/global_setting", dependencies=[Depends(verify_secret)])
     async def global_setting():
         all_custom_tags = []
 
@@ -219,7 +257,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             conn = DataBase.get_conn()
             all_custom_tags = Tag.get_all_custom_tag(conn)
             extra_paths = ExtraPath.get_extra_paths(conn) + [
-                ExtraPath(path, ExtraPathType.cli_only)
+                ExtraPath(path, ExtraPathType.cli_only.value)
                 for path in kwargs.get("extra_paths_cli", [])
             ]
             update_extra_paths(conn)
@@ -235,13 +273,14 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             "extra_paths": extra_paths,
             "enable_access_control": enable_access_control,
             "launch_mode": kwargs.get("launch_mode", "sd"),
+            "export_fe_fn": bool(kwargs.get("export_fe_fn")),
         }
 
     class DeleteFilesReq(BaseModel):
         file_paths: List[str]
 
     @app.post(
-        pre + "/delete_files",
+        api_base + "/delete_files",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     async def delete_files(req: DeleteFilesReq):
@@ -282,7 +321,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         dest_folder: str
 
     @app.post(
-        pre + "/mkdirs",
+        api_base + "/mkdirs",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     async def create_folders(req: CreateFoldersReq):
@@ -297,7 +336,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         create_dest_folder: Optional[bool] = False
 
     @app.post(
-        pre + "/copy_files",
+        api_base + "/copy_files",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     async def copy_files(req: MoveFilesReq):
@@ -317,7 +356,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
                 raise HTTPException(400, detail=error_msg)
 
     @app.post(
-        pre + "/move_files",
+        api_base + "/move_files",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     async def move_files(req: MoveFilesReq):
@@ -351,7 +390,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
                 )
                 raise HTTPException(400, detail=error_msg)
 
-    @app.get(pre + "/files", dependencies=[Depends(verify_secret)])
+    @app.get(api_base + "/files", dependencies=[Depends(verify_secret)])
     async def get_target_folder_files(folder_path: str):
         files: List[FileInfoDict] = []
         try:
@@ -407,7 +446,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
 
         return {"files": filter_allowed_files(files)}
 
-    @app.get(pre + "/image-thumbnail", dependencies=[Depends(verify_secret)])
+    @app.get(api_base + "/image-thumbnail", dependencies=[Depends(verify_secret)])
     async def thumbnail(path: str, t: str, size: str = "256x256"):
         check_path_trust(path)
         if not temp_path:
@@ -440,7 +479,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             headers={"Cache-Control": "max-age=31536000", "ETag": hash},
         )
 
-    @app.get(pre + "/file", dependencies=[Depends(verify_secret)])
+    @app.get(api_base + "/file", dependencies=[Depends(verify_secret)])
     async def get_file(path: str, t: str, disposition: Optional[str] = None):
         filename = path
         import mimetypes
@@ -457,7 +496,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             encoded_filename = urllib.parse.quote(disposition.encode('utf-8'))
             headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{encoded_filename}"
 
-        if is_path_under_parents(filename) and is_valid_image_path(
+        if is_path_under_parents(filename) and is_valid_media_path(
             filename
         ):  # 认为永远不变,不要协商缓存了试试
             headers[
@@ -472,13 +511,64 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             media_type=media_type,
             headers=headers,
         )
+    
+    @app.get(api_base + "/stream_video", dependencies=[Depends(verify_secret)])
+    async def stream_video(path: str, request: Request):      
+        check_path_trust(path)
+        import mimetypes
+        media_type, _ = mimetypes.guess_type(path)
+        return range_requests_response(
+            request, file_path=path, content_type=media_type
+        )
 
-    @app.post(pre + "/send_img_path", dependencies=[Depends(verify_secret)])
+    @app.get(api_base + "/video_cover", dependencies=[Depends(verify_secret)])
+    async def video_cover(path: str, t: str):        
+        check_path_trust(path)
+        if not temp_path:
+            return
+        
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404)
+        if not os.path.isfile(path) and get_video_type(path):
+            raise HTTPException(status_code=400, detail=f"{path} is not a video file")
+        # 生成缓存文件的路径
+        hash_dir = hashlib.md5((path + t).encode("utf-8")).hexdigest()
+        hash = hash_dir
+        cache_dir = os.path.join(temp_path, "iib_cache", "video_cover", hash_dir)
+        cache_path = os.path.join(cache_dir, "cover.webp")
+
+        # 如果缓存文件存在，则直接返回该文件
+        if os.path.exists(cache_path):
+            return FileResponse(
+                cache_path,
+                media_type="image/webp",
+                headers={"Cache-Control": "max-age=31536000", "ETag": hash},
+            )
+        # 如果缓存文件不存在，则生成缩略图并保存
+        
+        import imageio.v3 as iio
+        frame = iio.imread(
+            path,
+            index=16,
+            plugin="pyav",
+        )
+        
+        os.makedirs(cache_dir, exist_ok=True)
+        iio.imwrite(cache_path,frame, extension=".webp")
+
+        # 返回缓存文件
+        return FileResponse(
+            cache_path,
+            media_type="image/webp",
+            headers={"Cache-Control": "max-age=31536000", "ETag": hash},
+        )
+
+    @app.post(api_base + "/send_img_path", dependencies=[Depends(verify_secret)])
     async def api_set_send_img_path(path: str):
         send_img_path["value"] = path
 
     # 等待图片信息生成完成
-    @app.get(pre + "/gen_info_completed", dependencies=[Depends(verify_secret)])
+    @app.get(api_base + "/gen_info_completed", dependencies=[Depends(verify_secret)])
     async def api_set_send_img_path():
         for _ in range(30):  # timeout 3s
             if send_img_path["value"] == "":  # 等待setup里面生成完成
@@ -488,27 +578,30 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             await asyncio.sleep(0.1)
         return send_img_path["value"] == ""
 
-    @app.get(pre + "/image_geninfo", dependencies=[Depends(verify_secret)])
+    @app.get(api_base + "/image_geninfo", dependencies=[Depends(verify_secret)])
     async def image_geninfo(path: str):
-        with Image.open(path) as img:
-            if is_img_created_by_comfyui(img):
-                if is_img_created_by_comfyui_with_webui_gen_info(img):
-                    return read_sd_webui_gen_info_from_image(img, path)
-                else:
-                    try:                    
-                        params = get_comfyui_exif_data(img)
-                        return comfyui_exif_data_to_str(params)
-                    except:
-                        logger.error('parse comfyui image failed. prompt:')
-                        logger.error(img.info.get('prompt'))
-                        return ''
+        return parse_image_info(path).raw_info
+
+    class GeninfoBatchReq(BaseModel):
+        paths: List[str]
+
+    @app.post(api_base + "/image_geninfo_batch", dependencies=[Depends(verify_secret)])
+    async def image_geninfo_batch(req: GeninfoBatchReq):
+        res = {}
+        conn = DataBase.get_conn()
+        for path in req.paths:
+            img = DbImg.get(conn, path)
+            if img:
+                res[path] = img.exif
             else:
-                return read_sd_webui_gen_info_from_image(img, path)
+                res[path] = await image_geninfo(path)
+        return res
+
 
     class CheckPathExistsReq(BaseModel):
         paths: List[str]
 
-    @app.post(pre + "/check_path_exists", dependencies=[Depends(verify_secret)])
+    @app.post(api_base + "/check_path_exists", dependencies=[Depends(verify_secret)])
     async def check_path_exists(req: CheckPathExistsReq):
         update_all_scanned_paths()
         res = {}
@@ -516,9 +609,24 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             res[path] = os.path.exists(path) and is_path_trusted(path)
         return res
 
-    @app.get(pre)
+    @app.get(api_base)
     def index_bd():
+        if fe_public_path:
+            with open(index_html_path, "r", encoding="utf-8") as file:
+                content = file.read().replace(DEFAULT_BASE, fe_public_path)
+                return Response(content=content, media_type="text/html")
         return FileResponse(index_html_path)
+    
+    static_dir = f"{cwd}/vue/dist"
+    @app.get(api_base + "/fe-static/{file_path:path}")
+    async def serve_static_file(file_path: str):
+        file_full_path = f"{static_dir}/{file_path}"
+        if file_path.endswith(".js"):
+            with open(file_full_path, "r", encoding="utf-8") as file:
+                content = file.read().replace(DEFAULT_BASE, fe_public_path)
+            return Response(content=content, media_type="text/javascript")
+        else:
+            return FileResponse(file_full_path)
 
     class PathsReq(BaseModel):
         paths: List[str]
@@ -527,7 +635,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         path: str
 
     @app.post(
-        pre + "/open_folder",
+        api_base + "/open_folder",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     def open_folder_using_explore(req: OpenFolderReq):
@@ -535,7 +643,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             raise HTTPException(status_code=403)
         open_folder(*os.path.split(req.path))
 
-    @app.post(pre + "/shutdown")
+    @app.post(api_base + "/shutdown")
     async def shutdown_app():
         # This API endpoint is mainly used as a sidecar in Tauri applications to shut down the application
         if not kwargs.get("enable_shutdown"):
@@ -544,10 +652,14 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         return {"message": "Application is shutting down."}
 
     @app.post(
-        pre + "/zip",
+        api_base + "/zip",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     def zip_files(req: PathsReq):
+        for path in req.paths:
+            check_path_trust(path)
+            if not os.path.isfile(path):
+                   raise HTTPException(400, "The corresponding path must be a file.")
         now = datetime.now()
         timestamp = now.strftime("%Y-%m-%d-%H-%M-%S")
         zip_temp_dir = os.path.join(cwd, "zip_temp")
@@ -555,10 +667,18 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         file_path = os.path.join(zip_temp_dir, f"iib_batch_download_{timestamp}.zip")
         create_zip_file(req.paths, file_path)
         return FileResponse(file_path, media_type="application/zip")
+    
+    @app.post(
+        api_base + "/open_with_default_app",
+        dependencies=[Depends(verify_secret), Depends(write_permission_required)],
+    )
+    def open_target_file_withDefault_app(req: OpenFolderReq):
+        check_path_trust(req.path)
+        open_file_with_default_app(req.path)
 
-    db_pre = pre + "/db"
+    db_api_base = api_base + "/db"
 
-    @app.get(db_pre + "/basic_info", dependencies=[Depends(verify_secret)])
+    @app.get(db_api_base + "/basic_info", dependencies=[Depends(verify_secret)])
     async def get_db_basic_info():
         conn = DataBase.get_conn()
         img_count = DbImg.count(conn)
@@ -571,7 +691,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             "expired_dirs": expired_dirs,
         }
 
-    @app.get(db_pre + "/expired_dirs", dependencies=[Depends(verify_secret)])
+    @app.get(db_api_base + "/expired_dirs", dependencies=[Depends(verify_secret)])
     async def get_db_expired():
         conn = DataBase.get_conn()
         expired_dirs = Folder.get_expired_dirs(conn)
@@ -581,7 +701,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         }
 
     @app.post(
-        db_pre + "/update_image_data",
+        db_api_base + "/update_image_data",
         dependencies=[Depends(verify_secret)],
     )
     async def update_image_db_data():
@@ -591,7 +711,9 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             img_count = DbImg.count(conn)
             update_extra_paths(conn)
             dirs = (
-                get_img_search_dirs() if img_count == 0 else Folder.get_expired_dirs(conn)
+                get_img_search_dirs()
+                if img_count == 0
+                else Folder.get_expired_dirs(conn)
             ) + mem["extra_paths"]
 
             update_image_data(dirs)
@@ -605,8 +727,10 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         folder_paths: List[str] = None
         size: Optional[int] = 200
 
-    @app.post(db_pre + "/search_by_substr", dependencies=[Depends(verify_secret)])
+    @app.post(db_api_base + "/search_by_substr", dependencies=[Depends(verify_secret)])
     async def search_by_substr(req: SearchBySubstrReq):
+        if IIB_DEBUG:
+            logger.info(req)
         conn = DataBase.get_conn()
         folder_paths=normalize_paths(req.folder_paths, os.getcwd())
         if(not folder_paths and req.folder_paths):
@@ -632,8 +756,10 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         folder_paths: List[str] = None
         size: Optional[int] = 200
 
-    @app.post(db_pre + "/match_images_by_tags", dependencies=[Depends(verify_secret)])
+    @app.post(db_api_base + "/match_images_by_tags", dependencies=[Depends(verify_secret)])
     async def match_image_by_tags(req: MatchImagesByTagsReq):
+        if IIB_DEBUG:
+            logger.info(req)
         conn = DataBase.get_conn()
         folder_paths=normalize_paths(req.folder_paths, os.getcwd())
         if(not folder_paths and req.folder_paths):
@@ -650,10 +776,10 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             "cursor": next_cursor
         }
 
-    @app.get(db_pre + "/img_selected_custom_tag", dependencies=[Depends(verify_secret)])
+    @app.get(db_api_base + "/img_selected_custom_tag", dependencies=[Depends(verify_secret)])
     async def get_img_selected_custom_tag(path: str):
         path = os.path.normpath(path)
-        if not is_valid_image_path(path):
+        if not is_valid_media_path(path):
             return []
         conn = DataBase.get_conn()
         update_extra_paths(conn)
@@ -669,7 +795,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         # tags = Tag.get_all_custom_tag()
         return ImageTag.get_tags_for_image(conn, img.id, type="custom")
 
-    @app.post(db_pre + "/get_image_tags", dependencies=[Depends(verify_secret)])
+    @app.post(db_api_base + "/get_image_tags", dependencies=[Depends(verify_secret)])
     async def get_img_tags(req: PathsReq):
         conn = DataBase.get_conn()
         return ImageTag.batch_get_tags_by_path(conn, req.paths)
@@ -679,7 +805,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         tag_id: int
 
     @app.post(
-        db_pre + "/toggle_custom_tag_to_img",
+        db_api_base + "/toggle_custom_tag_to_img",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     async def toggle_custom_tag_to_img(req: ToggleCustomTagToImgReq):
@@ -695,10 +821,10 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             )
         img = DbImg.get(conn, path)
         if not img:
-            if  DbImg.count(conn):
+            if DbImg.count(conn):
                 update_image_data([os.path.dirname(path)])
                 img = DbImg.get(conn, path)
-            else: 
+            else:
                 raise HTTPException(
                     400,
                     "你需要先通过图像搜索页生成索引"
@@ -722,7 +848,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         tag_id: int
 
     @app.post(
-        db_pre + "/batch_update_image_tag",
+        db_api_base + "/batch_update_image_tag",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     async def batch_update_image_tag(req: BatchUpdateImageReq):
@@ -764,7 +890,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         tag_name: str
 
     @app.post(
-        db_pre + "/add_custom_tag",
+        db_api_base + "/add_custom_tag",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     async def add_custom_tag(req: AddCustomTagReq):
@@ -774,10 +900,10 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         return tag
 
     class RemoveCustomTagReq(BaseModel):
-        tag_id: str
+        tag_id: int
 
     @app.post(
-        db_pre + "/remove_custom_tag",
+        db_api_base + "/remove_custom_tag",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     async def remove_custom_tag(req: RemoveCustomTagReq):
@@ -790,7 +916,7 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
         tag_id: str
 
     @app.post(
-        db_pre + "/remove_custom_tag_from_img",
+        db_api_base + "/remove_custom_tag_from_img",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     async def remove_custom_tag_from_img(req: RemoveCustomTagFromReq):
@@ -802,10 +928,10 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
 
     class ExtraPathModel(BaseModel):
         path: str
-        type: Optional[ExtraPathType]
+        types: List[str]
 
     @app.post(
-        f"{db_pre}/extra_paths",
+        f"{db_api_base}/extra_paths",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     async def create_extra_path(extra_path: ExtraPathModel):
@@ -813,32 +939,59 @@ def infinite_image_browsing_api(app: FastAPI, **kwargs):
             if not is_path_under_parents(extra_path.path):
                 raise HTTPException(status_code=403)
         conn = DataBase.get_conn()
-        path = ExtraPath(extra_path.path, extra_path.type)
+        path = ExtraPath.get_target_path(conn, extra_path.path)
+        if path:
+            for t in extra_path.types:
+                path.types.append(t)
+            path.types = unique_by(path.types)
+        else:
+            path = ExtraPath(extra_path.path, extra_path.types)
         try:
             path.save(conn)
         finally:
             conn.commit()
 
+    class ExtraPathAliasModel(BaseModel):
+        path: str
+        alias: str
+
+
+    @app.post(
+        f"{db_api_base}/alias_extra_path",
+        dependencies=[Depends(verify_secret), Depends(write_permission_required)],
+    )
+    async def alias_extra_path(req: ExtraPathAliasModel):
+        conn = DataBase.get_conn()
+        path = ExtraPath.get_target_path(conn, req.path)
+        if not path:
+            raise HTTPException(400)
+        path.alias = req.alias
+        path.save(conn)
+        return path
+        
+
     @app.get(
-        f"{db_pre}/extra_paths",
+        f"{db_api_base}/extra_paths",
         dependencies=[Depends(verify_secret)],
     )
     async def read_extra_paths():
         conn = DataBase.get_conn()
         return ExtraPath.get_extra_paths(conn)
+    
+
 
     @app.delete(
-        f"{db_pre}/extra_paths",
+        f"{db_api_base}/extra_paths",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     async def delete_extra_path(extra_path: ExtraPathModel):
         path = to_abs_path(extra_path.path)
         conn = DataBase.get_conn()
-        ExtraPath.remove(conn, path, extra_path.type, img_search_dirs=get_img_search_dirs())
+        ExtraPath.remove(conn, path, extra_path.types, img_search_dirs=get_img_search_dirs())
 
     
     @app.post(
-        f"{db_pre}/rebuild_index",
+        f"{db_api_base}/rebuild_index",
         dependencies=[Depends(verify_secret), Depends(write_permission_required)],
     )
     async def rebuild_index():

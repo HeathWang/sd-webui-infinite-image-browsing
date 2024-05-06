@@ -2,7 +2,7 @@
 import type { Tag } from '@/api/db'
 import type { FileNodeInfo } from '@/api/files'
 import type { MenuInfo } from 'ant-design-vue/lib/menu/src/interface'
-import { isImageFile } from '@/util'
+import { isMediaFile } from '@/util'
 // import { StarFilled, StarOutlined } from '@/icon'
 import { useGlobalStore } from '@/store/useGlobalStore'
 import { computed } from 'vue'
@@ -27,13 +27,15 @@ const tags = computed(() => {
 <template>
   <a-menu @click="emit('contextMenuClick', $event, file, idx)">
     <a-menu-item key="deleteFiles" :disabled="disableDelete">{{ $t('deleteSelected') }}</a-menu-item>
+    <a-menu-item key="openWithDefaultApp" >{{ $t('openWithDefaultApp') }}</a-menu-item>
+    <a-menu-item key="saveSelectedAsJson" >{{ $t('saveSelectedAsJson') }}</a-menu-item>
     <template v-if="file.type === 'dir'">
       <a-menu-item key="openInNewTab">{{ $t('openInNewTab') }}</a-menu-item>
       <a-menu-item key="openOnTheRight">{{ $t('openOnTheRight') }}</a-menu-item>
       <a-menu-item key="openWithWalkMode">{{ $t('openWithWalkMode') }}</a-menu-item>
     </template>
     <template v-if="file.type === 'file'">
-      <template v-if="isImageFile(file.name)">
+      <template v-if="isMediaFile(file.name)">
         <a-menu-item key="viewGenInfo">{{ $t('viewGenerationInfo') }}</a-menu-item>
         <a-menu-divider />
         <template v-if="global.conf?.launch_mode !== 'server'">

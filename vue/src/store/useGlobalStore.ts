@@ -1,15 +1,17 @@
 import type { GlobalConf } from '@/api'
-import type { MatchImageByTagsReq } from '@/api/db'
+import type { MatchImageByTagsReq, Tag } from '@/api/db'
 import { FileNodeInfo } from '@/api/files'
 import { i18n, t } from '@/i18n'
 import { getPreferredLang } from '@/i18n'
 import { SortMethod } from '@/page/fileTransfer/fileSort'
 import type { getQuickMovePaths } from '@/page/taskRecord/autoComplete'
 import { type Dict, type ReturnTypeAsync } from '@/util'
+import { AnyFn, usePreferredDark } from '@vueuse/core'
 import { cloneDeep, uniqueId } from 'lodash-es'
 import { defineStore } from 'pinia'
 import { VNode, computed, onMounted, reactive, toRaw, watch } from 'vue'
 import { ref } from 'vue'
+import { WithRequired } from 'vue3-ts-util'
 
 interface TabPaneBase {
   name: string | VNode
@@ -20,7 +22,57 @@ interface TabPaneBase {
 interface OtherTabPane extends TabPaneBase {
   type: 'empty' | 'global-setting' | 'tag-search' |  'batch-download'
 }
-// logDetailId
+
+export type GridViewFileTag = WithRequired<Partial<Tag>, 'name'>;
+
+export interface GridViewFile extends FileNodeInfo {
+  /**
+   * Tags for displaying the file. The 'name' property is required,
+   * while the other properties are optional.
+   */
+  tags?: GridViewFileTag[];
+}
+
+/**
+ * A tab pane that displays files in a grid view.
+ */
+interface GridViewTabPane extends TabPaneBase {
+  type: 'grid-view'
+  /**
+   * Indicates whether the files in the grid view can be deleted.
+   */
+  removable?: boolean
+  /**
+   * Indicates whether files can be dragged and dropped from other pages into the grid view.
+   */
+  allowDragAndDrop?: boolean,
+  files: GridViewFile[]
+}
+
+
+export interface GridViewFile extends FileNodeInfo {
+  /**
+   * Tags for displaying the file. The 'name' property is required,
+   * while the other properties are optional.
+   */
+  tags?: GridViewFileTag[];
+}
+
+/**
+ * A tab pane that displays files in a grid view.
+ */
+interface GridViewTabPane extends TabPaneBase {
+  type: 'grid-view'
+  /**
+   * Indicates whether the files in the grid view can be deleted.
+   */
+  removable?: boolean
+  /**
+   * Indicates whether files can be dragged and dropped from other pages into the grid view.
+   */
+  allowDragAndDrop?: boolean,
+  files: GridViewFile[]
+}
 
 interface TagSearchMatchedImageGridTabPane extends TabPaneBase {
   type: 'tag-search-matched-image-grid'
@@ -50,7 +102,7 @@ export interface FuzzySearchTabPane extends TabPaneBase {
   searchScope?: string
 }
 
-export type TabPane = FileTransferTabPane | OtherTabPane | TagSearchMatchedImageGridTabPane | ImgSliTabPane | TagSearchTabPane | FuzzySearchTabPane
+export type TabPane = FileTransferTabPane | OtherTabPane | TagSearchMatchedImageGridTabPane | ImgSliTabPane | TagSearchTabPane | FuzzySearchTabPane| GridViewTabPane
 
 /**
  * This interface represents a tab, which contains an array of panes, an ID, and a key
@@ -93,11 +145,12 @@ export const useGlobalStore = defineStore(
   () => {
     const conf = ref<GlobalConf>()
     const quickMovePaths = ref([] as ReturnTypeAsync<typeof getQuickMovePaths>)
-    
+
     const enableThumbnail = ref(true)
     const gridThumbnailResolution = ref(512)
     const defaultSortingMethod = ref(SortMethod.CREATED_TIME_DESC)
     const defaultGridCellWidth = ref(256)
+    const darkModeControl = ref<'light' | 'dark' | 'auto'>('auto')
 
     const createEmptyPane = (): TabPane => ({
       type: 'empty',
@@ -156,7 +209,6 @@ export const useGlobalStore = defineStore(
       }
     }
 
-
     const lang = ref(getPreferredLang())
     watch(lang, (v) => (i18n.global.locale.value = v as any))
 
@@ -168,17 +220,41 @@ export const useGlobalStore = defineStore(
     })
 
     const pathAliasMap = computed((): Dict<string> => {
-      const keys = ['outdir_extras_samples','outdir_save','outdir_txt2img_samples',
-      'outdir_img2img_samples','outdir_img2img_grids','outdir_txt2img_grids']
-      const res = quickMovePaths.value.filter((v) => keys.includes(v.key)).map(v => [v.zh, v.dir])
+      const keys = [
+        'outdir_extras_samples',
+        'outdir_save',
+        'outdir_txt2img_samples',
+        'outdir_img2img_samples',
+        'outdir_img2img_grids',
+        'outdir_txt2img_grids'
+      ]
+      const res = quickMovePaths.value.filter((v) => keys.includes(v.key)).map((v) => [v.zh, v.dir])
       return Object.fromEntries(res)
     })
 
+    const pageFuncExportMap = new Map<string, Dict<AnyFn>>()
     const ignoredConfirmActions = reactive<Record<ActionConfirmRequired, boolean>>({ deleteOneOnly: true })
 
+    const dark = usePreferredDark()
+
+    const computedTheme = computed(() =>  {
+      const getParDark = () => {
+        try {
+          return parent.location.search.includes('theme=dark') // sd-webui的
+        } catch (error) {
+          return false
+        }
+      }
+      const isDark = darkModeControl.value === 'auto' ? (dark.value || getParDark()) : (darkModeControl.value === 'dark')
+      return isDark ? 'dark' : 'light'
+    })
     return {
+      computedTheme,
+      darkModeControl,
       defaultSortingMethod,
       defaultGridCellWidth,
+      defaultChangeIndchecked: ref(true),
+      defaultSeedChangeChecked: ref(false),
       pathAliasMap,
       createEmptyPane,
       lang,
@@ -194,8 +270,10 @@ export const useGlobalStore = defineStore(
       longPressOpenContextMenu,
       openTagSearchMatchedImageGridInRight,
       onlyFoldersAndImages: ref(true),
+      keepMultiSelect: ref(false),
       fullscreenPreviewInitialUrl: ref(''),
       shortcut,
+      pageFuncExportMap,
       dontShowAgain: ref(false),
       dontShowAgainNewImgOpts: ref(false),
       ignoredConfirmActions
@@ -205,6 +283,9 @@ export const useGlobalStore = defineStore(
     persist: {
       // debug: true,
       paths: [
+        'defaultChangeIndchecked',
+        'defaultSeedChangeChecked',
+        'darkModeControl',
         'dontShowAgainNewImgOpts',
         'defaultSortingMethod',
         'defaultGridCellWidth',

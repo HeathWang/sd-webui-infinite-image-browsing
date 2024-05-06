@@ -583,6 +583,11 @@
   "resolved" "http://nodepackages.hellobike.cn:4873/@types%2fsjcl/-/sjcl-1.0.30.tgz"
   "version" "1.0.30"
 
+"@types/web-bluetooth@^0.0.14":
+  "integrity" "sha512-5d2RhCard1nQUC3aHcq/gHzWYO6K0WJmAbjO7mQJgCQKtZpgXxv1rOM6O/dBDhDYYVutk1sciOgNSe+5YyfM8A=="
+  "resolved" "http://nodepackages.hellobike.cn:4873/@types%2fweb-bluetooth/-/web-bluetooth-0.0.14.tgz"
+  "version" "0.0.14"
+
 "@types/web-bluetooth@^0.0.17":
   "integrity" "sha512-4p9vcSmxAayx72yn70joFoL44c9MO/0+iVEBIQXe3v2h2SiAsEIo/G5v6ObFWvNKRFjbrVadNf9LqEEZeQPzdA=="
   "resolved" "http://nodepackages.hellobike.cn:4873/@types%2fweb-bluetooth/-/web-bluetooth-0.0.17.tgz"
@@ -869,10 +874,25 @@
     "@vueuse/shared" "10.1.2"
     "vue-demi" ">=0.14.0"
 
+"@vueuse/core@^8.3.1":
+  "integrity" "sha512-B/Mdj9TK1peFyWaPof+Zf/mP9XuGAngaJZBwPaXBvU3aCTZlx3ltlrFFFyMV4iGBwsjSCeUCgZrtkEj9dS2Y3Q=="
+  "resolved" "http://nodepackages.hellobike.cn:4873/@vueuse%2fcore/-/core-8.9.4.tgz"
+  "version" "8.9.4"
+  dependencies:
+    "@types/web-bluetooth" "^0.0.14"
+    "@vueuse/metadata" "8.9.4"
+    "@vueuse/shared" "8.9.4"
+    "vue-demi" "*"
+
 "@vueuse/metadata@10.1.2":
   "integrity" "sha512-3mc5BqN9aU2SqBeBuWE7ne4OtXHoHKggNgxZR2K+zIW4YLsy6xoZ4/9vErQs6tvoKDX6QAqm3lvsrv0mczAwIQ=="
   "resolved" "http://nodepackages.hellobike.cn:4873/@vueuse%2fmetadata/-/metadata-10.1.2.tgz"
   "version" "10.1.2"
+
+"@vueuse/metadata@8.9.4":
+  "integrity" "sha512-IwSfzH80bnJMzqhaapqJl9JRIiyQU0zsRGEgnxN6jhq7992cPUJIRfV+JHRIZXjYqbwt07E1gTEp0R0zPJ1aqw=="
+  "resolved" "http://nodepackages.hellobike.cn:4873/@vueuse%2fmetadata/-/metadata-8.9.4.tgz"
+  "version" "8.9.4"
 
 "@vueuse/shared@10.1.2":
   "integrity" "sha512-1uoUTPBlgyscK9v6ScGeVYDDzlPSFXBlxuK7SfrDGyUTBiznb3mNceqhwvZHjtDRELZEN79V5uWPTF1VDV8svA=="
@@ -880,6 +900,13 @@
   "version" "10.1.2"
   dependencies:
     "vue-demi" ">=0.14.0"
+
+"@vueuse/shared@8.9.4":
+  "integrity" "sha512-wt+T30c4K6dGRMVqPddexEVLa28YwxW5OFIPmzUHICjphfAuBFTTdDoyqREZNDOFJZ44ARH1WWQNCUK8koJ+Ag=="
+  "resolved" "http://nodepackages.hellobike.cn:4873/@vueuse%2fshared/-/shared-8.9.4.tgz"
+  "version" "8.9.4"
+  dependencies:
+    "vue-demi" "*"
 
 "@zanllp/vue-virtual-scroller@^2.0.0-beta.7":
   "integrity" "sha512-CPi29NC6v/pvQQ03jadnQgJ3vXrmtR3hBQ9oAZ6fnmxzxD8zdMDrOKb0ioZe5B3zKL/f8hiPAapnypMTWMXm7g=="
@@ -1209,6 +1236,11 @@
   "resolved" "http://nodepackages.hellobike.cn:4873/delayed-stream/-/delayed-stream-1.0.0.tgz"
   "version" "1.0.0"
 
+"diff-match-patch@^1.0.5":
+  "integrity" "sha1-q7WE1fEM0Rlt/FWqA3AVkq4/ezc="
+  "resolved" "http://nodepackages.hellobike.cn:4873/diff-match-patch/-/diff-match-patch-1.0.5.tgz"
+  "version" "1.0.5"
+
 "dir-glob@^3.0.1":
   "integrity" "sha512-WkrWp9GR4KXfKGYzOLmTuGVi1UWFfws377n9cc55/tb6DuqyF6pcQ5AbiHEshaDpY9v6oaSr2XCDidGmMwdzIA== sha1-Vtv3PZkqSpO6FYT0U0Bj/S5BcX8="
   "resolved" "http://nodepackages.hellobike.cn:4873/dir-glob/-/dir-glob-3.0.1.tgz"
@@ -1515,6 +1547,11 @@
   "resolved" "http://nodepackages.hellobike.cn:4873/fs.realpath/-/fs.realpath-1.0.0.tgz"
   "version" "1.0.0"
 
+"fsevents@~2.3.2":
+  "integrity" "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA== sha1-ilJveLj99GI7cJ4Ll1xSwkwC/Ro="
+  "resolved" "http://nodepackages.hellobike.cn:4873/fsevents/-/fsevents-2.3.2.tgz"
+  "version" "2.3.2"
+
 "function-bind@^1.1.1":
   "integrity" "sha512-yIovAzMX49sF8Yl58fSCWJ5svSLuaibPxXQJFLmBObTuCr0Mf1KiPopGM9NiFjiYBCbfaa2Fh6breQ6ANVTI0A== sha1-pWiZ0+o8m6uHS7l3O3xe3pL0iV0="
   "resolved" "http://nodepackages.hellobike.cn:4873/function-bind/-/function-bind-1.1.1.tgz"
@@ -1625,6 +1662,11 @@
   "integrity" "sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw== sha1-hK5l+n6vsWX922FWauFLrwVmTw8="
   "resolved" "http://nodepackages.hellobike.cn:4873/he/-/he-1.2.0.tgz"
   "version" "1.2.0"
+
+"highlight.js@^11.5.1":
+  "integrity" "sha512-fJ7cW7fQGCYAkgv4CPfwFHrfd/cLS4Hau96JuJ+ZTOWhjnhoeN1ub1tFmALm/+lW5z4WCAuAV9bm05AP0mS6Gw=="
+  "resolved" "http://nodepackages.hellobike.cn:4873/highlight.js/-/highlight.js-11.9.0.tgz"
+  "version" "11.9.0"
 
 "html-tags@^3.3.1":
   "integrity" "sha512-ztqyC3kLto0e9WbNp0aeP+M3kTt+nbaIveGmUxAtZa+8iFgKLUOD4YKM5j+f3QD89bra7UeumolZHKuOXnTmeQ=="
@@ -2432,6 +2474,11 @@
   optionalDependencies:
     "fsevents" "~2.3.2"
 
+"vue-demi@*":
+  "integrity" "sha512-EOG8KXDQNwkJILkx/gPcoL/7vH+hORoBaKgGe+6W7VFMvCYJfmF2dGbvgDroVnI8LU7/kTu8mbjRZGBU1z9NTA=="
+  "resolved" "http://nodepackages.hellobike.cn:4873/vue-demi/-/vue-demi-0.14.7.tgz"
+  "version" "0.14.7"
+
 "vue-demi@>=0.14.0":
   "integrity" "sha512-o9NUVpl/YlsGJ7t+xuqJKx8EBGf1quRhCiT6D/J0pfwmk9zUwYkC7yrF4SZCe6fETvSM3UNL2edcbYrSyc4QHA=="
   "resolved" "http://nodepackages.hellobike.cn:4873/vue-demi/-/vue-demi-0.14.5.tgz"
@@ -2441,6 +2488,15 @@
   "integrity" "sha512-o9NUVpl/YlsGJ7t+xuqJKx8EBGf1quRhCiT6D/J0pfwmk9zUwYkC7yrF4SZCe6fETvSM3UNL2edcbYrSyc4QHA=="
   "resolved" "http://nodepackages.hellobike.cn:4873/vue-demi/-/vue-demi-0.14.5.tgz"
   "version" "0.14.5"
+
+"vue-diff@^1.2.4":
+  "integrity" "sha512-9z+0uPHigi/DdE3Zhdg1zR3VkiBaDN4czjWa/Zznvizn4znckVqz20p1KytaWq5NJtJ7UnkqRbuWsaCuC1ZHaA=="
+  "resolved" "http://nodepackages.hellobike.cn:4873/vue-diff/-/vue-diff-1.2.4.tgz"
+  "version" "1.2.4"
+  dependencies:
+    "@vueuse/core" "^8.3.1"
+    "diff-match-patch" "^1.0.5"
+    "highlight.js" "^11.5.1"
 
 "vue-eslint-parser@^9.1.1", "vue-eslint-parser@^9.3.0":
   "integrity" "sha512-48IxT9d0+wArT1+3wNIy0tascRoywqSUe2E1YalIC1L8jsUGe5aJQItWfRok7DVFGz3UYvzEI7n5wiTXsCMAcQ=="
@@ -2506,7 +2562,7 @@
   dependencies:
     "is-plain-object" "3.0.1"
 
-"vue@^2.6.14 || ^3.3.0", "vue@^3.0.0", "vue@^3.0.0-0 || ^2.6.0", "vue@^3.2.0", "vue@^3.2.25", "vue@^3.3.4", "vue@>=3.0.0", "vue@>=3.0.3", "vue@>=3.2.0", "vue@2 || 3", "vue@3.3.4":
+"vue@^2.6.0 || ^3.2.0", "vue@^2.6.14 || ^3.3.0", "vue@^3.0.0", "vue@^3.0.0-0 || ^2.6.0", "vue@^3.2.0", "vue@^3.2.25", "vue@^3.3.4", "vue@>=3.0.0", "vue@>=3.0.3", "vue@>=3.2.0", "vue@2 || 3", "vue@3.3.4":
   "integrity" "sha512-VTyEYn3yvIeY1Py0WaYGZsXnz3y5UnGi62GjVEqvEGPl6nxbOrCXbVOTQWBEJUqAyTUk2uJ5JLVnYJ6ZzGbrSw=="
   "resolved" "http://nodepackages.hellobike.cn:4873/vue/-/vue-3.3.4.tgz"
   "version" "3.3.4"

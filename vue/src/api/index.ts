@@ -51,15 +51,23 @@ const addInterceptor = (axiosInst: AxiosInstance) => {
         }
       
         switch (err.response?.data?.detail?.type) {
-          case "secret_key_required":
+          case 'secret_key_required':
             Modal.error({
               width: '60vw',
               title: t('secretKeyMustBeConfigured'),
-              content: () => h('p', { style: `white-space: pre-line;` } , t('secretKeyRequiredWarnMsg'))
+              content: () => h('p', { style: 'white-space: pre-line;' } , t('secretKeyRequiredWarnMsg'))
             })
             throw new Error(t('secretKeyRequiredWarnMsg'))
         }
-        const errmsg = err.response?.data?.detail ?? t('errorOccurred')
+        let errmsg = err.response?.data?.detail
+        try {
+          if (!errmsg) {
+            errmsg = JSON.parse(await err.response?.data.text()).detail
+          }
+        } catch (e) {
+          console.error(err.response ,e)
+        }
+        errmsg ??=  t('errorOccurred')
         message.error(errmsg)
         throw new Error(errmsg)
       }
@@ -90,6 +98,7 @@ export interface GlobalConf {
   extra_paths: ExtraPathModel[]
   enable_access_control: boolean
   launch_mode: 'server' | 'sd'
+  export_fe_fn: boolean
 }
 
 export const getGlobalSetting = async () => {
@@ -107,13 +116,23 @@ export const setImgPath = async (path: string) => {
 }
 
 export const genInfoCompleted = async () => {
-  return (await axiosInst.value.get(`/gen_info_completed`, { timeout: 60_000 })).data as boolean
+  return (await axiosInst.value.get('/gen_info_completed', { timeout: 60_000 })).data as boolean
 }
 
 export const getImageGenerationInfo = async (path: string) => {
-  return (await axiosInst.value.get(`/image_geninfo?path=${encodeURIComponent(path)}`)).data as string
+  return (await axiosInst.value.get(`/image_geninfo?path=${encodeURIComponent(path)}`))
+    .data as string
+}
+
+export const getImageGenerationInfoBatch = async (paths: string[]) => {
+  const resp = await axiosInst.value.post('/image_geninfo_batch', { paths })
+  return resp.data
 }
 
 export const openFolder = async (path: string) => {
   await axiosInst.value.post('/open_folder', { path })
+}
+
+export const openWithDefaultApp = async (path: string) => {
+  await axiosInst.value.post('/open_with_default_app', { path })
 }

@@ -3,4 +3,6 @@ uvicorn
 piexif
 python-dotenv
 Pillow
-pyfunctional
+imageio
+av
+lxml

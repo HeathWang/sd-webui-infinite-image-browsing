@@ -31,6 +31,7 @@ const tags = computed(() =>
 )
 const classSort = [
   'custom',
+  'Source Identifier',
   'Model',
   'lora',
   'lyco',
@@ -105,7 +106,7 @@ const onAddTagBtnSubmit = async () => {
   addTagName.value = ''
   addInputing.value = false
 }
-const onTagRemoveClick = (tagId: number) => {
+const onTagRemoveClick = (tagId: number|string) => {
   Modal.confirm({
     title: t('confirmDelete'),
     async onOk () {

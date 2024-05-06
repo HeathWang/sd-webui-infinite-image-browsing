@@ -2,7 +2,7 @@ import { useGlobalStore, type FileTransferTabPane, type Shortcut, type TagSearch
 import { useImgSliStore } from '@/store/useImgSli'
 import { onLongPress, useElementSize, useMouseInElement } from '@vueuse/core'
 import { ref, computed, watch, onMounted, h, reactive } from 'vue'
-import { genInfoCompleted, getImageGenerationInfo, openFolder, setImgPath } from '@/api'
+import { genInfoCompleted, getImageGenerationInfo, openFolder, openWithDefaultApp, setImgPath } from '@/api'
 import {
   useWatchDocument,
   ok,
@@ -30,7 +30,7 @@ import type { MenuInfo } from 'ant-design-vue/lib/menu/src/interface'
 import { t } from '@/i18n'
 import { DatabaseOutlined } from '@/icon'
 import { addExtraPath, batchUpdateImageTag, removeExtraPath, toggleCustomTagToImg } from '@/api/db'
-import { FileTransferData, downloadFiles, getFileTransferDataFromDragEvent, isMediaFile, toRawFileUrl } from '@/util/file'
+import { FileTransferData, downloadFileInfoJSON, downloadFiles, getFileTransferDataFromDragEvent, isMediaFile, toRawFileUrl } from '@/util/file'
 import { getShortcutStrFromEvent } from '@/util/shortcut'
 import { openCreateFlodersModal, MultiSelectTips } from '@/components/functionalCallableComp'
 import { useTagStore } from '@/store/useTagStore'
@@ -249,11 +249,11 @@ export function usePreview () {
     if (previewing.value && !state.sortedFiles[previewIdx.value]) {
       message.info(t('manualExitFullScreen'), 5)
       await delay(500)
-        ; (
-          document.querySelector(
-            '.ant-image-preview-operations-operation .anticon-close'
-          ) as HTMLDivElement
-        )?.click()
+      ; (
+        document.querySelector(
+          '.ant-image-preview-operations-operation .anticon-close'
+        ) as HTMLDivElement
+      )?.click()
       previewIdx.value = -1
     }
   })
@@ -267,6 +267,23 @@ export function usePreview () {
   }
 }
 
+
+export function useKeepMultiSelect () {
+  const { eventEmitter, multiSelectedIdxs, sortedFiles } = useHookShareState().toRefs()
+  const onSelectAll = () => eventEmitter.value.emit('selectAll')
+  const onReverseSelect = () => {
+    multiSelectedIdxs.value = sortedFiles.value.map((_, idx) => idx)
+      .filter(v => !multiSelectedIdxs.value.includes(v))
+  }
+  const onClearAllSelected = () => {
+    multiSelectedIdxs.value = []
+  }
+  return {
+    onSelectAll,
+    onReverseSelect,
+    onClearAllSelected
+  }
+}
 /**
  * 路径栏相关
  */
@@ -501,10 +518,10 @@ export function useLocation () {
       if (!path.can_delete) {
         return
       }
-      await removeExtraPath({ path: currLocation.value, type: 'scanned' })
+      await removeExtraPath({ path: currLocation.value, types: ['scanned'] })
       message.success(t('removeCompleted'))
     } else {
-      await addExtraPath({ path: currLocation.value, type: 'scanned' })
+      await addExtraPath({ path: currLocation.value, types: ['scanned'] })
       message.success(t('addCompleted'))
     }
     globalEvents.emit('searchIndexExpired')
@@ -649,7 +666,7 @@ export function useFilesDisplay ({ fetchNext }: {fetchNext?: () => Promise<any>}
     }
   }
 
-    // 填充够一页，直到不行为止
+  // 填充够一页，直到不行为止
   const fetchDataUntilViewFilled = async (isFullScreenPreview = false) => {
     const s = scroller.value
     const currIdx = () => (isFullScreenPreview ? previewIdx.value : s?.$_endIndex ?? 0)
@@ -680,7 +697,7 @@ export function useFilesDisplay ({ fetchNext }: {fetchNext?: () => Promise<any>}
     const s = scroller.value
     if (s) {
       const paths = sortedFiles.value.slice(Math.max(s.$_startIndex - 10, 0), s.$_endIndex + 10)
-        .filter(v => v.is_under_scanned_path && isImageFile(v.name))
+        .filter(v => v.is_under_scanned_path && isMediaFile(v.name))
         .map(v => v.fullpath)
       tagStore.fetchImageTags(paths)
     }
@@ -716,8 +733,16 @@ export function useFileTransfer () {
   const recover = () => {
     multiSelectedIdxs.value = []
   }
-  useWatchDocument('click', recover)
-  useWatchDocument('blur', recover)
+  useWatchDocument('click', () => {
+    if (!global.keepMultiSelect) {
+      recover()
+    }
+  })
+  useWatchDocument('blur',  () => {
+    if (!global.keepMultiSelect) {
+      recover()
+    }
+  })
   watch(currPage, recover)
 
   const onFileDragStart = (e: DragEvent, idx: number) => {
@@ -933,6 +958,10 @@ export function useFileItemActions (
     switch (e.key) {
       case 'previewInNewWindow':
         return window.open(url)
+      case 'saveSelectedAsJson':
+        return downloadFileInfoJSON(getSelectedImg())
+      case 'openWithDefaultApp':
+        return openWithDefaultApp(file.fullpath)
       case 'download':{
         const selectedFiles = getSelectedImg()
         downloadFiles(selectedFiles.map(file => toRawFileUrl(file, true)))
@@ -1051,10 +1080,10 @@ export function useFileItemActions (
       case 'deleteFiles': {
         const selectedFiles = getSelectedImg()
         const removeFile = async () => {
-            const paths = selectedFiles.map((v) => v.fullpath)
-            await deleteFiles(paths)
-            message.success(t('deleteSuccess'))
-            events.emit('removeFiles', { paths: paths, loc: currLocation.value })
+          const paths = selectedFiles.map((v) => v.fullpath)
+          await deleteFiles(paths)
+          message.success(t('deleteSuccess'))
+          events.emit('removeFiles', { paths: paths, loc: currLocation.value })
         }
         if (selectedFiles.length === 1) {
           return removeFile()

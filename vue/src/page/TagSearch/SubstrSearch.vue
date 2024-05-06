@@ -12,6 +12,9 @@ import { LeftCircleOutlined, RightCircleOutlined, regex } from '@/icon'
 import { message } from 'ant-design-vue'
 import { t } from '@/i18n'
 import { createImageSearchIter, useImageSearch } from './hook'
+import { useKeepMultiSelect } from '../fileTransfer/hook'
+import MultiSelectKeep from '@/components/MultiSelectKeep.vue'
+import { useGlobalStore } from '@/store/useGlobalStore'
 
 const props = defineProps<{ tabIdx: number; paneIdx: number, searchScope?: string }>()
 const isRegex = ref(false)
@@ -48,8 +51,11 @@ const {
   onFileDragStart,
   onFileDragEnd,
   cellWidth,
-  onScroll
+  onScroll,
+  saveAllFileAsJson,
+  saveLoadedFileAsJson
 } = useImageSearch(iter)
+
 
 const info = ref<DataBaseBasicInfo>()
 
@@ -91,10 +97,14 @@ useGlobalEventListen('searchIndexExpired', () => info.value && (info.value.expir
 const onRegexpClick = () => {
   isRegex.value = !isRegex.value
 }
+const g = useGlobalStore()
 
+const { onClearAllSelected, onSelectAll, onReverseSelect } = useKeepMultiSelect()
 </script>
 <template>
   <div class="container" ref="stackViewEl">
+    <MultiSelectKeep :show="!!multiSelectedIdxs.length || g.keepMultiSelect" 
+      @clear-all-selected="onClearAllSelected" @select-all="onSelectAll" @reverse-select="onReverseSelect"/>
     <div class="search-bar" v-if="info" @keydown.stop>
       <a-input v-model:value="substr" :placeholder="$t('fuzzy-search-placeholder') + ' ' + $t('regexSearchEnabledHint')"
         :disabled="!queue.isIdle" @keydown.enter="query" allow-clear />
@@ -106,9 +116,13 @@ const onRegexpClick = () => {
         $t('search') }}
       </AButton>
     </div>
-    <div class="search-bar last">
+    <div class="search-bar">
       <div class="form-name">{{ $t('searchScope') }}</div>
       <ATextarea :auto-size="{ maxRows: 8 }" v-model:value="folder_paths_str" :placeholder="$t('specifiedSearchFolder')"/>
+    </div>
+    <div class="search-bar last actions">
+      <a-button @click="saveLoadedFileAsJson">{{ $t('saveLoadedImageAsJson') }}</a-button>
+      <a-button @click="saveAllFileAsJson">{{ $t('saveAllAsJson') }}</a-button>
     </div>
     <ASpin size="large" :spinning="!queue.isIdle">
       <AModal v-model:visible="showGenInfo" width="70vw" mask-closable @ok="showGenInfo = false">
@@ -128,6 +142,9 @@ const onRegexpClick = () => {
       </AModal>
       <RecycleScroller ref="scroller" class="file-list" v-if="images" :items="images" :item-size="itemSize.first"
         key-field="fullpath" :item-secondary-size="itemSize.second" :gridItems="gridItems" @scroll="onScroll">
+        <template #after>
+          <div style="padding: 16px 0 512px;"/>
+        </template>
         <template v-slot="{ item: file, index: idx }">
           <!-- idx 和file有可能丢失 -->
           <file-item-cell :idx="idx" :file="file" v-model:show-menu-idx="showMenuIdx" @file-item-click="onFileItemClick"
@@ -147,6 +164,11 @@ const onRegexpClick = () => {
   </div>
 </template>
 <style scoped lang="scss">
+::v-deep {
+  .float-panel {
+    position: fixed;
+  }
+}
 .regex-icon {
   img {
     height: 1.5em;
@@ -179,6 +201,9 @@ const onRegexpClick = () => {
       flex-shrink: 0;
       padding: 4px 8px;
     }
+  .actions > * {
+    margin-right:  4px;
+  }
 }
 
 .preview-switch {
@@ -210,6 +235,8 @@ const onRegexpClick = () => {
 
 .container {
   background: var(--zp-secondary-background);
+  
+  position: relative;
 
   .file-list {
     list-style: none;

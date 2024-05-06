@@ -4,17 +4,21 @@ import { useGlobalStore } from '@/store/useGlobalStore'
 import { fallbackImage, ok } from 'vue3-ts-util'
 import type { FileNodeInfo } from '@/api/files'
 import { isImageFile, isVideoFile } from '@/util'
-import { toImageThumbnailUrl, toRawFileUrl } from '@/util/file'
+import { toImageThumbnailUrl, toVideoCoverUrl, toRawFileUrl } from '@/util/file'
 import type { MenuInfo } from 'ant-design-vue/lib/menu/src/interface'
 import { computed } from 'vue'
 import ContextMenu from './ContextMenu.vue'
+import ChangeIndicator from './ChangeIndicator.vue'
 import { useTagStore } from '@/store/useTagStore'
-import { CloseCircleOutlined, StarFilled, StarOutlined, PlayCircleFilled } from '@/icon'
+import { CloseCircleOutlined, StarFilled, StarOutlined } from '@/icon'
 import { Tag } from '@/api/db'
 import { openVideoModal } from './functionalCallableComp'
+import type { GenDiffInfo } from '@/api/files'
+import { play } from '@/icon'
 
 const global = useGlobalStore()
 const tagStore = useTagStore()
+
 const props = withDefaults(
   defineProps<{
     file: FileNodeInfo
@@ -24,11 +28,30 @@ const props = withDefaults(
     cellWidth: number
     fullScreenPreviewImageUrl?: string
     enableRightClickMenu?: boolean,
-    enableCloseIcon?: boolean
+    enableCloseIcon?: boolean,
     isSelectedMutilFiles?: boolean
+    genDiffToPrevious?: GenDiffInfo
+    genDiffToNext?: GenDiffInfo
+    genInfo?: string
+    enableChangeIndicator?: boolean
+    extraTags?: Tag[]
   }>(),
-  { selected: false, enableRightClickMenu: true, enableCloseIcon: false }
+  {
+    selected: false, enableRightClickMenu: true, enableCloseIcon: false, genDiffToNext: () => ({
+      empty: true,
+      ownFile: '',
+      otherFile: '',
+      diff: '',
+    }), genDiffToPrevious: () => ({
+      empty: true,
+      ownFile: '',
+      otherFile: '',
+      diff: '',
+    })
+  }
 )
+
+
 
 const emit = defineEmits<{
   'update:showMenuIdx': [v: number],
@@ -67,9 +90,9 @@ const taggleLikeTag = () => {
   <a-dropdown :trigger="['contextmenu']" :visible="!global.longPressOpenContextMenu ? undefined : typeof idx === 'number' && showMenuIdx === idx
     " @update:visible="(v: boolean) => typeof idx === 'number' && emit('update:showMenuIdx', v ? idx : -1)">
     <li class="file file-item-trigger grid" :class="{
-      clickable: file.type === 'dir',
-      selected
-    }" :data-idx="idx" :key="file.name" draggable="true" @dragstart="emit('dragstart', $event, idx)"
+    clickable: file.type === 'dir',
+    selected
+  }" :data-idx="idx" :key="file.name" draggable="true" @dragstart="emit('dragstart', $event, idx)"
       @dragend="emit('dragend', $event, idx)" @click.capture="emit('fileItemClick', $event, file, idx)">
 
       <div>
@@ -105,19 +128,26 @@ const taggleLikeTag = () => {
           这么复杂是因为再全屏查看时可能因为直接删除导致fullpath变化，然后整个预览直接退出-->
         <div :key="file.fullpath" :class="`idx-${idx} item-content`" v-if="isImageFile(file.name)">
 
+          <!-- change indicators -->
+          <ChangeIndicator v-if="enableChangeIndicator" :gen-diff-to-next="genDiffToNext"
+            :gen-diff-to-previous="genDiffToPrevious" />
+          <!-- change indicators END -->
+
           <a-image :src="imageSrc" :fallback="fallbackImage" :preview="{
-            src: fullScreenPreviewImageUrl,
-            onVisibleChange: (v: boolean, lv: boolean) => emit('previewVisibleChange', v, lv)
-          }" />
+    src: fullScreenPreviewImageUrl,
+    onVisibleChange: (v: boolean, lv: boolean) => emit('previewVisibleChange', v, lv)
+  }" />
           <div class="tags-container" v-if="customTags && cellWidth > 128">
-            <a-tag v-for="tag in customTags" :key="tag.id" :color="tagStore.getColor(tag.name)">
+            <a-tag v-for="tag in extraTags ?? customTags" :key="tag.id" :color="tagStore.getColor(tag.name)">
               {{ tag.name }}
             </a-tag>
           </div>
         </div>
-        <div :class="`idx-${idx} item-content video`" v-else-if="isVideoFile(file.name)" @click="openVideoModal(file)">
+        <div :class="`idx-${idx} item-content video`" :urld="toVideoCoverUrl(file)" :style="{ 'background-image': `url('${toVideoCoverUrl(file)}')` }"
+          v-else-if="isVideoFile(file.name)" @click="openVideoModal(file, (id) => emit('contextMenuClick', { key: `toggle-tag-${id}` } as any, file, idx))">
+      
           <div class="play-icon">
-            <PlayCircleFilled />
+            <img :src="play" style="width: 40px;height: 40px;">
           </div>
           <div class="tags-container" v-if="customTags && cellWidth > 128">
             <a-tag v-for="tag in customTags" :key="tag.id" :color="tagStore.getColor(tag.name)">
@@ -167,6 +197,7 @@ const taggleLikeTag = () => {
     overflow: hidden;
     width: v-bind('$props.cellWidth + "px"');
     height: v-bind('$props.cellWidth + "px"');
+    background-size: cover;
     cursor: pointer;
   }
 
@@ -174,8 +205,9 @@ const taggleLikeTag = () => {
     position: absolute;
     top: 50%;
     left: 50%;
-    font-size: 3em;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%); 
+    border-radius: 100%;
+    display: flex;
   }
 
   .tags-container {

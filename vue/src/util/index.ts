@@ -31,7 +31,7 @@ export const getTabIdxInSDWebui = () => {
   return Array.from(tabList).findIndex((v) => v.id.includes('infinite-image-browsing'))
 }
 
-export const switch2IBB = () => {
+export const switch2IIB = () => {
   try {
     gradioApp().querySelector('#tabs')!.querySelectorAll('button')[getTabIdxInSDWebui()].click()
   } catch (error) {
@@ -91,7 +91,7 @@ export const copy2clipboardI18n = async (text: string, msg?: string) => {
     }
     message.success(msg ?? t('copied'))
   } catch (error) {
-    message.error("copy failed. maybe it's non-secure environment")
+    message.error('copy failed. maybe it\'s non-secure environment')
   }
 }
 
@@ -100,6 +100,7 @@ export const { useEventListen: useGlobalEventListen, eventEmitter: globalEvents 
     returnToIIB(): void
     updateGlobalSetting(): void
     searchIndexExpired(): void
+    closeTabPane(tabIdx: number, key: string): void
   }>()
 
 type AsyncFunction<T> = (...args: any[]) => Promise<T>

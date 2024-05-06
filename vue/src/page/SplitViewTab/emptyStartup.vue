@@ -7,7 +7,7 @@ import { FileDoneOutlined, LockOutlined, PlusOutlined } from '@/icon'
 import { t } from '@/i18n'
 import { cloneDeep } from 'lodash-es'
 import { useImgSliStore } from '@/store/useImgSli'
-import { addToExtraPath, onRemoveExtraPathClick } from './extraPathControlFunc'
+import { addToExtraPath, onAliasExtraPathClick, onRemoveExtraPathClick } from './extraPathControlFunc'
 import actionContextMenu from './actionContextMenu.vue'
 
 const global = useGlobalStore()
@@ -24,6 +24,7 @@ const compCnMap: Partial<Record<TabPane['type'], string>> = {
 const createPane = (type: TabPane['type'], path?: string, walkMode = false) => {
   let pane: TabPane
   switch (type) {
+    case 'grid-view':
     case 'tag-search-matched-image-grid':
     case 'img-sli':
       return
@@ -77,12 +78,12 @@ const lastRecord = computed(() => global.tabListHistoryRecord?.[1])
 
 const walkModeSupportedDir = computed(() =>
   global.quickMovePaths.filter(
-    ({ key: k, type }) =>
+    ({ key: k, types }) =>
       k === 'outdir_txt2img_samples' ||
       k === 'outdir_img2img_samples' ||
       k === 'outdir_txt2img_grids' ||
       k === 'outdir_img2img_grids' ||
-      type === 'walk'
+      types.includes('walk')
   )
 )
 const canpreviewInNewWindow = window.parent !== window
@@ -99,17 +100,25 @@ const restoreRecord = () => {
   <div class="container">
     <div class="header">
       <h1>{{ $t('welcome') }}</h1>
-      <div v-if="global.conf?.enable_access_control && global.dontShowAgain" style="margin-left: 16px;font-size: 1.5em;">
+      <div v-if="global.conf?.enable_access_control && global.dontShowAgain"
+        style="margin-left: 16px;font-size: 1.5em;">
         <LockOutlined title="Access Control mode" style="vertical-align: text-bottom;" />
       </div>
       <div flex-placeholder />
-      <a href="https://github.com/zanllp/sd-webui-infinite-image-browsing" target="_blank" class="last-record">Github</a>
+
+      <a href="https://github.com/zanllp/sd-webui-infinite-image-browsing" target="_blank"
+        class="last-record">Github</a>
       <a href="https://github.com/zanllp/sd-webui-infinite-image-browsing/blob/main/.env.example" target="_blank"
         class="last-record">{{ $t('privacyAndSecurity') }}</a>
       <a href="https://github.com/zanllp/sd-webui-infinite-image-browsing/wiki/Change-log" target="_blank"
         class="last-record">{{ $t('changlog') }}</a>
       <a href="https://github.com/zanllp/sd-webui-infinite-image-browsing/issues/90" target="_blank"
         class="last-record">{{ $t('faq') }}</a>
+      <a-radio-group v-model:value="global.darkModeControl" button-style="solid">
+        <a-radio-button value="light">light</a-radio-button>
+        <a-radio-button value="auto">auto</a-radio-button>
+        <a-radio-button value="dark">dark</a-radio-button>
+      </a-radio-group>
     </div>
     <a-alert show-icon v-if="global.conf?.enable_access_control && !global.dontShowAgain">
       <template #message>
@@ -140,7 +149,7 @@ const restoreRecord = () => {
       <div class="feature-item">
         <h2>{{ $t('walkMode') }}</h2>
         <ul>
-          <li @click="addToExtraPath('walk')" class="item" style="text-align: ;">
+          <li @click="addToExtraPath('walk')" class="item">
             <span class="text line-clamp-1">
               <PlusOutlined /> {{ $t('add') }}
             </span>
@@ -150,9 +159,13 @@ const restoreRecord = () => {
             @open-on-the-right="openOnTheRight('local', dir.dir, true)">
             <li class="item rem" @click.prevent="openInCurrentTab('local', dir.dir, true)">
               <span class="text line-clamp-2">{{ dir.zh }}</span>
-              <AButton v-if="dir.can_delete" type="link" @click.stop="onRemoveExtraPathClick(dir.dir, 'walk')">{{
-                $t('remove') }}
-              </AButton>
+              <template v-if="dir.can_delete">
+                <AButton type="link" @click.stop="onAliasExtraPathClick(dir.dir)">{{ $t('alias') }}
+                </AButton>
+                <AButton type="link" @click.stop="onRemoveExtraPathClick(dir.dir, 'walk')">{{
+        $t('remove') }}
+                </AButton>
+              </template>
             </li>
           </actionContextMenu>
         </ul>
@@ -160,18 +173,23 @@ const restoreRecord = () => {
       <div class="feature-item" v-if="global.quickMovePaths.length">
         <h2>{{ $t('launchFromQuickMove') }}</h2>
         <ul>
-          <li @click="addToExtraPath('scanned')" class="item" style="text-align: ;">
+          <li @click="addToExtraPath('scanned')" class="item">
             <span class="text line-clamp-1">
               <PlusOutlined /> {{ $t('add') }}
             </span>
           </li>
-          <actionContextMenu v-for="dir in global.quickMovePaths.filter(v => v.type !== 'walk')" :key="dir.key"
-            @open-in-new-tab="openInNewTab('local', dir.dir)" @open-on-the-right="openOnTheRight('local', dir.dir)">
+          <actionContextMenu
+            v-for="dir in global.quickMovePaths.filter(({ types: ts }) => ts.includes('cli_access_only') || ts.includes('preset') || ts.includes('scanned'))"
+            :key="dir.key" @open-in-new-tab="openInNewTab('local', dir.dir)"
+            @open-on-the-right="openOnTheRight('local', dir.dir)">
             <li class="item rem" @click.prevent="openInCurrentTab('local', dir.dir)">
               <span class="text line-clamp-2">{{ dir.zh }}</span>
-              <AButton v-if="dir.can_delete && dir.type == 'scanned'" type="link"
-                @click.stop="onRemoveExtraPathClick(dir.dir, 'scanned')">{{ $t('remove') }}
-              </AButton>
+              <template v-if="dir.can_delete && dir.types.includes('scanned')">
+                <AButton type="link" @click.stop="onAliasExtraPathClick(dir.dir)">{{ $t('alias') }}
+                </AButton>
+                <AButton type="link" @click.stop="onRemoveExtraPathClick(dir.dir, 'scanned')">{{ $t('remove') }}
+                </AButton>
+              </template>
             </li>
           </actionContextMenu>
         </ul>
@@ -244,7 +262,7 @@ const restoreRecord = () => {
 }
 
 .last-record {
-  margin-left: 16px;
+  margin-right: 16px;
   font-size: 14px;
   color: var(--zp-secondary);
   flex-shrink: 0;

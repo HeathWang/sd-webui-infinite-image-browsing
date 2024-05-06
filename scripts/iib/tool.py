@@ -1,3 +1,4 @@
+import ctypes
 from datetime import datetime
 import os
 import platform
@@ -12,6 +13,7 @@ import piexif.helper
 import json
 import zipfile
 from PIL import Image
+import shutil
 
 sd_img_dirs = [
     "outdir_txt2img_samples",
@@ -41,6 +43,34 @@ except Exception as e:
     print(e)
 
 
+
+def backup_db_file(db_file_path):
+
+    if not os.path.exists(db_file_path):
+        return
+    max_backup_count = int(os.environ.get('IIB_DB_FILE_BACKUP_MAX', '16'))
+    if max_backup_count < 1:
+        return
+    backup_folder = os.path.join(cwd,'iib_db_backup')
+    current_time = datetime.now()
+    timestamp = current_time.strftime('%Y-%m-%d %H-%M-%S')
+    backup_filename = f"iib.db_{timestamp}"
+    os.makedirs(backup_folder, exist_ok=True)
+    backup_filepath = os.path.join(backup_folder, backup_filename)
+    shutil.copy2(db_file_path, backup_filepath)
+    backup_files = os.listdir(backup_folder)
+    pattern = r"iib\.db_(\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2})"
+    backup_files_with_time = [(f, re.search(pattern, f).group(1)) for f in backup_files if re.search(pattern, f)]
+    sorted_backup_files = sorted(backup_files_with_time, key=lambda x: datetime.strptime(x[1], '%Y-%m-%d %H-%M-%S'))
+
+    if len(sorted_backup_files) > max_backup_count:
+        files_to_remove_count = len(sorted_backup_files) - max_backup_count
+        for i in range(files_to_remove_count):
+            file_to_remove = os.path.join(backup_folder, sorted_backup_files[i][0])
+            os.remove(file_to_remove)
+            
+    print(f"\033[92mIIB Database file has been successfully backed up to the backup folder.\033[0m")
+
 def get_sd_webui_conf(**kwargs):
     try:
         from modules.shared import opts
@@ -50,7 +80,7 @@ def get_sd_webui_conf(**kwargs):
         pass
     try:
         sd_conf_path = kwargs.get("sd_webui_config")
-        with open(sd_conf_path, "r") as f:
+        with codecs.open(sd_conf_path, "r", "utf-8") as f:
             obj = json.loads(f.read())
             if kwargs.get("sd_webui_path_relative_to_config"):
                 for dir in sd_img_dirs:
@@ -137,10 +167,12 @@ def human_readable_size(size_bytes):
 
 def get_windows_drives():
     drives = []
-    for drive in range(ord("A"), ord("Z") + 1):
-        drive_name = chr(drive) + ":/"
-        if os.path.exists(drive_name):
+    bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+    for letter in range(65, 91):
+        if bitmask & 1:
+            drive_name = chr(letter) + ":/"
             drives.append(drive_name)
+        bitmask >>= 1
     return drives
 
 
@@ -164,9 +196,17 @@ def convert_to_bytes(file_size_str):
         return int(size)
     else:
         raise ValueError(f"Invalid file size string '{file_size_str}'")
+    
+def get_video_type(file_path):
+    video_extensions = ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.ts']
+    file_extension = file_path[file_path.rfind('.'):].lower()
 
+    if file_extension in video_extensions:
+        return file_extension[1:] 
+    else:
+        return None
 
-def is_valid_image_path(path):
+def is_valid_media_path(path):
     """
     判断给定的路径是否是图像文件
     """
@@ -175,7 +215,7 @@ def is_valid_image_path(path):
         return False
     if not os.path.isfile(abs_path):  # 判断是否是文件
         return False
-    if not imghdr.what(abs_path):  # 判断是否是图像文件
+    if not imghdr.what(abs_path) and not get_video_type(abs_path):  # 判断是否是图像文件
         return False
     return True
 
@@ -298,6 +338,14 @@ def find(lst, comparator):
 def findIndex(lst, comparator):
     return next((i for i, item in enumerate(lst) if comparator(item)), -1)
 
+def unquote(text):
+    if len(text) == 0 or text[0] != '"' or text[-1] != '"':
+        return text
+
+    try:
+        return json.loads(text)
+    except Exception:
+        return text
 
 def get_img_geninfo_txt_path(path: str):
     txt_path = re.sub(r"\.\w+$", ".txt", path)
@@ -308,7 +356,7 @@ def is_img_created_by_comfyui(img: Image):
     return img.info.get('prompt') and img.info.get('workflow')
 
 def is_img_created_by_comfyui_with_webui_gen_info(img: Image):
-    return img.info.get('parameters')
+    return is_img_created_by_comfyui(img) and img.info.get('parameters')
 
 def get_comfyui_exif_data(img: Image):
     prompt = img.info.get('prompt')
@@ -326,8 +374,12 @@ def get_comfyui_exif_data(img: Image):
             pass
     meta = {}
     KSampler_entry = data[meta_key]["inputs"]
+    # As a workaround to bypass parsing errors in the parser.
+    # https://github.com/jiw0220/stable-diffusion-image-metadata/blob/00b8d42d4d1a536862bba0b07c332bdebb2a0ce5/src/index.ts#L130
+    meta["Steps"] = "Unknown" 
     meta["Sampler"] = KSampler_entry["sampler_name"]
     meta["Model"] = data[KSampler_entry["model"][0]]["inputs"]["ckpt_name"]
+    meta["Source Identifier"] = "ComfyUI"
     def get_text_from_clip(idx: str) :
         text = data[idx]["inputs"]["text"]
         if isinstance(text, list): # type:CLIPTextEncode (NSP) mode:Wildcards
@@ -466,13 +518,22 @@ def parse_generation_parameters(x: str):
             prompt += ("" if prompt == "" else "\n") + line
 
     for k, v in re_param.findall(lastline):
-        v = v[1:-1] if v[0] == '"' and v[-1] == '"' else v
-        m = re_imagesize.match(v)
-        if m is not None:
-            res[k + "-1"] = m.group(1)
-            res[k + "-2"] = m.group(2)
-        else:
-            res[k] = v
+        try:
+            if len(v) == 0:
+                res[k] = v
+                continue
+            if v[0] == '"' and v[-1] == '"':
+                v = unquote(v)
+
+            m = re_imagesize.match(v)
+            if m is not None:
+                res[f"{k}-1"] = m.group(1)
+                res[f"{k}-2"] = m.group(2)
+            else:
+                res[k] = v
+        except Exception:
+            print(f"Error parsing \"{k}: {v}\"")
+            
     prompt_parse_res = parse_prompt(prompt)
     lora = prompt_parse_res["lora"]
     for k in res:
@@ -521,3 +582,16 @@ def open_folder(folder_path, file_path=None):
             subprocess.run(["xdg-open", folder])
 
 
+def open_file_with_default_app(file_path):
+    system = platform.system()
+    if system == 'Darwin':  # macOS
+        subprocess.call(['open', file_path])
+    elif system == 'Windows':  # Windows
+        subprocess.call(file_path, shell=True)
+    elif system == 'Linux':  # Linux
+        subprocess.call(['xdg-open', file_path])
+    else:
+        raise OSError(f'Unsupported operating system: {system}')
+    
+def omit(d, keys):
+    return {k: v for k, v in d.items() if k not in keys}

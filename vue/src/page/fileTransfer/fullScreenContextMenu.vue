@@ -22,6 +22,7 @@ import { toRawFileUrl } from '@/util/file'
 import ContextMenu from '@/components/ContextMenu.vue'
 import { useWatchDocument } from 'vue3-ts-util'
 import { useTagStore } from '@/store/useTagStore'
+import { parse } from '@/util/stable-diffusion-image-metadata'
 
 const global = useGlobalStore()
 
@@ -35,10 +36,33 @@ const selectedTag = computed(() => tagStore.tagMap.get(props.file.fullpath) ?? [
 const currImgResolution = ref('')
 const q = createReactiveQueue()
 const imageGenInfo = ref('')
-const geninfoFrags = computed(() => imageGenInfo.value.split('\n'))
+const cleanImageGenInfo = computed(() => imageGenInfo.value.replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;'))
+const geninfoFrags = computed(() => cleanImageGenInfo.value.split('\n'))
+const geninfoStruct = computed(() => parse(cleanImageGenInfo.value))
+
+const geninfoStructNoPrompts = computed(() => {
+  let p = parse(cleanImageGenInfo.value)
+  delete p.prompt
+  delete p.negativePrompt
+  return p
+})
 const emit = defineEmits<{
   (type: 'contextMenuClick', e: MenuInfo, file: FileNodeInfo, idx: number): void
 }>()
+
+
+function unescapeHtml(string: string) {
+  return `${string}`
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g,'<')
+    .replace( /&gt;/g,'>')
+    .replace( /&quot;/g,'"',)
+    .replace( /&#39;/g,'\'');
+}
 
 watch(
   () => props?.file?.fullpath,
@@ -53,7 +77,7 @@ watch(
   },
   { immediate: true }
 )
-
+const promptTabActivedKey = useLocalStorage('iib@fullScreenContextMenu.prompt-tab', 'structedData' as 'structedData' | 'sourceText')
 const resizeHandle = ref<HTMLElement>()
 const dragHandle = ref<HTMLElement>()
 const dragInitParams = {
@@ -90,6 +114,26 @@ function getParNode (p: any) {
   return p.parentNode as HTMLDivElement
 }
 
+function spanWrap (text: string) {
+  if (!text) {
+    return ''
+  }
+  let result = ''
+  const values = text.split(/[\n,]+/).map(v => v.trim()).filter(v => v)
+  let parenthesisActive = false
+  for (let i = 0; i < values.length; i++) {
+    const trimmedValue = values[i]
+    if (!parenthesisActive) parenthesisActive = trimmedValue.includes('(')
+    const cssClass = parenthesisActive ? 'has-parentheses' : ''
+    result += `<span class="${cssClass}">${trimmedValue}</span>`
+    if (i < values.length - 1) {
+      result += ','
+    }
+    if (parenthesisActive) parenthesisActive = !trimmedValue.includes(')')
+  }
+  return result
+}
+
 useWatchDocument('load', e => {
   const el = e.target as HTMLImageElement
   if (el.className === 'ant-image-preview-img') {
@@ -108,7 +152,7 @@ const baseInfoTags = computed(() => {
 const copyPositivePrompt = () => {
   const neg = 'Negative prompt:'
   const text = imageGenInfo.value.includes(neg) ? imageGenInfo.value.split(neg)[0] : geninfoFrags.value[0] ?? ''
-  copy2clipboardI18n(text.trim())
+  copy2clipboardI18n(unescapeHtml(text.trim()))
 }
 
 </script>
@@ -163,7 +207,7 @@ const copyPositivePrompt = () => {
               </a-menu>
             </template>
           </a-dropdown>
-          <AButton @click="emit('contextMenuClick', { key: 'download' } as MenuInfo, props.file, props.idx)" >{{
+          <AButton @click="emit('contextMenuClick', { key: 'download' } as MenuInfo, props.file, props.idx)">{{
             $t('download') }}</AButton>
           <a-button @click="copy2clipboardI18n(imageGenInfo)" v-if="imageGenInfo">{{
             $t('copyPrompt')
@@ -192,9 +236,39 @@ const copyPositivePrompt = () => {
             {{ tag.name }}
           </div>
         </div>
-        <p v-for="txt in geninfoFrags" :key="txt" class="gen-info-frag">
-          {{ txt }}
-        </p>
+        <a-tabs v-model:activeKey="promptTabActivedKey">
+          <a-tab-pane key="structedData" :tab="$t('structuredData')">
+            <div>
+              <template v-if="geninfoStruct.prompt">
+                <br />
+                <h3>Prompt</h3>
+                <code v-html="spanWrap(geninfoStruct.prompt ?? '')"></code>
+              </template>
+              <template v-if="geninfoStruct.negativePrompt">
+                <br />
+                <h3>Negative Prompt</h3>
+                <code v-html="spanWrap(geninfoStruct.negativePrompt ?? '')"></code>
+              </template>
+            </div>
+            <template v-if="Object.keys(geninfoStructNoPrompts).length"> <br />
+              <h3>Params</h3>
+              <table>
+                <tr v-for="txt, key in geninfoStructNoPrompts" :key="key" class="gen-info-frag">
+                  <td style="font-weight: 600;text-transform: capitalize;">{{ key }}</td>
+                  <td v-if="typeof txt == 'object'">
+                    <code>{{ txt }}</code>
+                  </td>
+                  <td v-else>
+                    {{ unescapeHtml(txt) }}
+                  </td>
+                </tr>
+              </table>
+            </template>
+          </a-tab-pane>
+          <a-tab-pane key="sourceText" :tab="$t('sourceText')">
+            <code>{{ imageGenInfo }}</code>
+          </a-tab-pane>
+        </a-tabs>
       </div>
     </div>
 
@@ -218,6 +292,7 @@ const copyPositivePrompt = () => {
 
     .tag {
       margin-right: 4px;
+      margin-bottom: 4px;
       padding: 2px 16px;
       border-radius: 4px;
       display: inline-block;
@@ -252,6 +327,48 @@ const copyPositivePrompt = () => {
     z-index: 1;
     padding-top: 4px;
     position: relative;
+
+    code {
+      font-size: 0.9em;
+      display: block;
+      padding: 4px;
+      background: var(--zp-primary-background);
+      border-radius: 4px;
+      margin-right: 20px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.78em;
+
+      :deep(span) {
+        background: var(--zp-secondary-variant-background);
+        color: var(--zp-primary);
+        padding: 2px 4px;
+        border-radius: 4px;
+        margin-right: 4px;
+      }
+
+      :deep(.has-parentheses) {
+        background: rgba(255, 100, 100, 0.14);
+      }
+
+      :deep(span:hover) {
+        background: rgba(120, 0, 0, 0.15);
+      }
+    }
+
+    table {
+      font-size: 1em;
+      border-radius: 4px;
+      border-collapse: separate;
+      margin-bottom: 3em;
+    }
+
+    table td {
+      padding-right: 14px;
+      padding-left: 4px;
+      border-bottom: 1px solid var(--zp-secondary);
+      border-collapse: collapse;
+    }
 
     .info-tags {
       .info-tag {
@@ -317,4 +434,5 @@ const copyPositivePrompt = () => {
       flex-wrap: wrap;
     }
   }
-}</style>
+}
+</style>
