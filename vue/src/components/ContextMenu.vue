@@ -27,7 +27,6 @@ const tags = computed(() => {
 <template>
   <a-menu @click="emit('contextMenuClick', $event, file, idx)">
     <a-menu-item key="deleteFiles" :disabled="disableDelete">{{ $t('deleteSelected') }}</a-menu-item>
-    <a-menu-item key="openWithDefaultApp" >{{ $t('openWithDefaultApp') }}</a-menu-item>
     <a-menu-item key="saveSelectedAsJson" >{{ $t('saveSelectedAsJson') }}</a-menu-item>
     <template v-if="file.type === 'dir'">
       <a-menu-item key="openInNewTab">{{ $t('openInNewTab') }}</a-menu-item>
@@ -71,7 +70,6 @@ const tags = computed(() => {
       </template>
       <a-menu-item key="previewInNewWindow">{{ $t('previewInNewWindow') }}</a-menu-item>
       <a-menu-item key="download">{{ $t('download') }}</a-menu-item>
-      <a-menu-item key="copyPreviewUrl">{{ $t('copySourceFilePreviewLink') }}</a-menu-item>
     </template>
   </a-menu>
 </template>
