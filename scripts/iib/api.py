@@ -87,15 +87,16 @@ async def verify_secret(request: Request):
         if is_secret_key_required:
             raise HTTPException(status_code=400, detail={"type": "secret_key_required"})
         return
-    token = request.cookies.get("IIB_S")
-    if not token:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    if not mem["secret_key_hash"]:
-        mem["secret_key_hash"] = hashlib.sha256(
-            (secret_key + "_ciallo").encode("utf-8")
-        ).hexdigest()
-    if mem["secret_key_hash"] != token:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    # no need for auth. tmp remove.
+    # token = request.cookies.get("IIB_S")
+    # if not token:
+    #     raise HTTPException(status_code=401, detail="Unauthorized")
+    # if not mem["secret_key_hash"]:
+    #     mem["secret_key_hash"] = hashlib.sha256(
+    #         (secret_key + "_ciallo").encode("utf-8")
+    #     ).hexdigest()
+    # if mem["secret_key_hash"] != token:
+    #     raise HTTPException(status_code=401, detail="Unauthorized")
 
 DEFAULT_BASE = "/infinite_image_browsing"
 def infinite_image_browsing_api(app: FastAPI, **kwargs):
